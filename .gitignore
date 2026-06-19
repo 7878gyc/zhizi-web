@@ -89,3 +89,73 @@ logs/
 
 # Preview files
 .preview
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+# Production build
+dist/
+build/
+out/
+.next/
+.rsbuild/
+# Testing
+coverage/
+*.lcov
+.nyc_output
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+node-compile-cache/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swo
+*~
+# OS files
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Desktop.ini
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+# Optional files
+*.tgz
+*.tar
+# TypeScript
+*.tsbuildinfo
+# Misc
+.coze-logs
