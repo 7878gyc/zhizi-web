@@ -1,13 +1,13 @@
 'use client';
 
 import type { AnalysisInfo } from '@/lib/go-types';
-import { gtpToCoord } from '@/lib/go-types';
 
 interface AnalysisPanelProps {
   analysisData: AnalysisInfo[];
   currentWinrate: number | null;
   currentPlayer: 'black' | 'white';
   isAnalyzing: boolean;
+  onSelectMove?: (info: AnalysisInfo) => void;
 }
 
 // Color rules matching the board: 1st=yellow, 2nd=blue, 3rd=green, 4th-5th or prior<30%=red
@@ -20,7 +20,7 @@ const RANK_COLORS = [
 ];
 
 function getRankColor(idx: number, prior: number): string {
-  if (prior < 0.3) return '#FF6B6B'; // red for low prior
+  if (prior < 0.3) return '#FF6B6B'; // red for low prior (推荐度低于30%)
   return RANK_COLORS[Math.min(idx, RANK_COLORS.length - 1)];
 }
 
@@ -29,6 +29,7 @@ export default function AnalysisPanel({
   currentWinrate,
   currentPlayer,
   isAnalyzing,
+  onSelectMove,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
@@ -82,7 +83,7 @@ export default function AnalysisPanel({
                 <span className="w-5 text-center">#</span>
                 <span className="w-10">坐标</span>
                 <span className="w-12 text-right">胜率</span>
-                <span className="w-12 text-right">分差</span>
+                <span className="w-12 text-right">目差</span>
                 <span className="w-12 text-right">访问</span>
                 <span className="w-10 text-right">先验</span>
               </div>
@@ -92,11 +93,13 @@ export default function AnalysisPanel({
                 return (
                   <div
                     key={`${info.move}-${idx}`}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-[#1A1A2E]/80"
+                    className="flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-[#1A1A2E]/80 cursor-pointer"
+                    onClick={() => onSelectMove?.(info)}
+                    title="点击查看变化图"
                   >
                     {/* Rank badge with color */}
                     <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                       style={{
                         backgroundColor: `${color}20`,
                         color,
@@ -116,7 +119,7 @@ export default function AnalysisPanel({
                       {(info.winrate * 100).toFixed(1)}%
                     </span>
 
-                    {/* Score */}
+                    {/* Score (目差) */}
                     <span className="w-12 text-right font-mono text-[#8B8FA3]">
                       {info.scoreMean !== undefined
                         ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
@@ -128,7 +131,7 @@ export default function AnalysisPanel({
                       {info.visits > 1000 ? `${(info.visits / 1000).toFixed(1)}k` : info.visits}
                     </span>
 
-                    {/* Prior */}
+                    {/* Prior (先验概率/推荐度) */}
                     <span className="w-10 text-right font-mono text-[#4A4A6A]">
                       {((info.prior ?? 0) * 100).toFixed(1)}%
                     </span>
@@ -141,12 +144,12 @@ export default function AnalysisPanel({
       </div>
 
       {/* Principal variation */}
-      {analysisData.length > 0 && analysisData[0].pv && (
+      {analysisData.length > 0 && analysisData[0].pv && analysisData[0].pv.length > 0 && (
         <div className="space-y-1.5">
           <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">主要变化</span>
           <div className="bg-[#1A1A2E]/50 rounded px-3 py-2">
             <span className="font-mono text-sm text-[#E0E0E0] tracking-wider">
-              {analysisData[0].pv.join(' ')}
+              {analysisData[0].pv.slice(0, 10).join(' ')}
             </span>
           </div>
         </div>

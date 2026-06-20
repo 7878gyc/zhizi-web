@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface WinrateChartProps {
   winrateHistory: (number | null)[];
@@ -58,31 +58,38 @@ export default function WinrateChart({
     ctx.fillStyle = '#1A1A2E';
     ctx.fillRect(0, 0, w, h);
 
-    // Data points (skip index 0 which is root with null winrate)
-    const dataPoints = winrateHistory.slice(1); // skip root
+    // Data points: index 0 is root (null winrate), skip it
+    // Each subsequent index i corresponds to move number i
+    const dataPoints = winrateHistory.slice(1);
     const numPoints = dataPoints.length;
 
-    if (numPoints < 2) {
+    // Draw axes always
+    drawAxes(ctx, plotLeft, plotRight, plotTop, plotBottom);
+
+    // Y axis labels: 100%, 50%, 0%
+    ctx.fillStyle = '#4A4A6A';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('100', plotLeft - 4, plotTop);
+    ctx.fillText('50', plotLeft - 4, plotTop + plotHeight * 0.5);
+    ctx.fillText('0', plotLeft - 4, plotBottom);
+
+    if (numPoints < 1 || dataPoints.every(v => v === null)) {
       // No data yet
       ctx.fillStyle = '#4A4A6A';
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('分析后显示胜率曲线', w / 2, h / 2);
-
-      // Still draw axes
-      drawAxes(ctx, plotLeft, plotRight, plotTop, plotBottom, numPoints);
       return;
     }
 
-    const maxMoves = Math.max(numPoints, 20);
+    const maxMoves = Math.max(numPoints + 5, 20);
     const xStep = plotWidth / maxMoves;
 
-    // Draw axes
-    drawAxes(ctx, plotLeft, plotRight, plotTop, plotBottom, maxMoves);
-
     // 50% reference line
-    const y50 = plotBottom - plotHeight * 0.5;
+    const y50 = plotTop + plotHeight * 0.5;
     ctx.strokeStyle = '#4A4A6A';
     ctx.lineWidth = 0.5;
     ctx.setLineDash([4, 4]);
@@ -92,60 +99,61 @@ export default function WinrateChart({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Fill area under curve
-    ctx.beginPath();
-    let firstValid = true;
+    // Compute valid points for drawing
+    const validPoints: { x: number; y: number; moveIdx: number }[] = [];
     for (let i = 0; i < numPoints; i++) {
       const wr = dataPoints[i];
-      if (wr === null) continue;
+      if (wr === null || wr === undefined) continue;
+      // wr is 0-1 representing the current player's winrate
+      // For black perspective display: 100% = top, 0% = bottom
+      // We show black's winrate, so if wr is from black's perspective, y = top when wr=1
       const x = plotLeft + (i + 0.5) * xStep;
-      const y = plotBottom - wr * plotHeight;
-      if (firstValid) {
-        ctx.moveTo(x, plotBottom);
-        ctx.lineTo(x, y);
-        firstValid = false;
-      } else {
-        ctx.lineTo(x, y);
-      }
+      const y = plotBottom - wr * plotHeight; // 1→top, 0→bottom
+      validPoints.push({ x, y, moveIdx: i });
     }
-    // Close the area
-    if (!firstValid) {
-      const lastValidX = plotLeft + (numPoints - 0.5) * xStep;
-      ctx.lineTo(lastValidX, plotBottom);
-      ctx.closePath();
 
-      const gradient = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
-      gradient.addColorStop(0, 'rgba(74, 158, 255, 0.15)');
-      gradient.addColorStop(0.5, 'rgba(74, 158, 255, 0.02)');
-      gradient.addColorStop(1, 'rgba(255, 107, 107, 0.15)');
-      ctx.fillStyle = gradient;
-      ctx.fill();
+    if (validPoints.length < 1) {
+      ctx.fillStyle = '#4A4A6A';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('分析后显示胜率曲线', w / 2, h / 2);
+      return;
     }
+
+    // Fill area under curve
+    ctx.beginPath();
+    ctx.moveTo(validPoints[0].x, plotBottom);
+    for (const p of validPoints) {
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.lineTo(validPoints[validPoints.length - 1].x, plotBottom);
+    ctx.closePath();
+
+    const gradient = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
+    gradient.addColorStop(0, 'rgba(74, 158, 255, 0.15)');
+    gradient.addColorStop(0.5, 'rgba(74, 158, 255, 0.02)');
+    gradient.addColorStop(1, 'rgba(255, 107, 107, 0.15)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
 
     // Draw line
     ctx.beginPath();
-    firstValid = true;
-    for (let i = 0; i < numPoints; i++) {
-      const wr = dataPoints[i];
-      if (wr === null) continue;
-      const x = plotLeft + (i + 0.5) * xStep;
-      const y = plotBottom - wr * plotHeight;
-      if (firstValid) {
-        ctx.moveTo(x, y);
-        firstValid = false;
-      } else {
-        ctx.lineTo(x, y);
-      }
+    ctx.moveTo(validPoints[0].x, validPoints[0].y);
+    for (let i = 1; i < validPoints.length; i++) {
+      ctx.lineTo(validPoints[i].x, validPoints[i].y);
     }
     ctx.strokeStyle = '#E8B931';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // Current move indicator
+    // currentMoveNumber is the number of moves played (0=root, 1=first move, etc.)
+    // dataPoints index = moveNumber - 1
     if (currentMoveNumber > 0 && currentMoveNumber <= numPoints) {
       const idx = currentMoveNumber - 1;
       const wr = dataPoints[idx];
-      if (wr !== null) {
+      if (wr !== null && wr !== undefined) {
         const x = plotLeft + (idx + 0.5) * xStep;
         const y = plotBottom - wr * plotHeight;
 
@@ -184,7 +192,6 @@ function drawAxes(
   plotRight: number,
   plotTop: number,
   plotBottom: number,
-  _maxMoves: number
 ) {
   ctx.strokeStyle = '#2A3A5C';
   ctx.lineWidth = 0.5;
@@ -200,13 +207,4 @@ function drawAxes(
   ctx.moveTo(plotLeft, plotBottom);
   ctx.lineTo(plotRight, plotBottom);
   ctx.stroke();
-
-  // Y labels: 0%, 50%, 100%
-  ctx.fillStyle = '#4A4A6A';
-  ctx.font = '9px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('100%', plotLeft - 4, plotTop);
-  ctx.fillText('50%', plotLeft - 4, plotTop + (plotBottom - plotTop) * 0.5);
-  ctx.fillText('0%', plotLeft - 4, plotBottom);
 }

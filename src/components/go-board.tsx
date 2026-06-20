@@ -2,7 +2,14 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { AnalysisInfo } from '@/lib/go-types';
-import { coordToGTP, gtpToCoord } from '@/lib/go-types';
+import { gtpToCoord } from '@/lib/go-types';
+
+interface VariationMove {
+  row: number;
+  col: number;
+  color: 'black' | 'white';
+  moveNumber: number;
+}
 
 interface GoBoardProps {
   boardSize: number;
@@ -13,6 +20,7 @@ interface GoBoardProps {
   lastMove?: { row: number; col: number } | null;
   hoverCoord?: { row: number; col: number } | null;
   onHoverChange?: (coord: { row: number; col: number } | null) => void;
+  variationMoves?: VariationMove[] | null;
 }
 
 const BOARD_COLOR = '#DCB35C';
@@ -41,6 +49,7 @@ export default function GoBoard({
   lastMove,
   hoverCoord,
   onHoverChange,
+  variationMoves,
 }: GoBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,12 +125,10 @@ export default function GoBoard({
     ctx.lineWidth = 1;
     for (let i = 0; i < boardSize; i++) {
       const pos = padding + i * cellSize;
-      // Horizontal
       ctx.beginPath();
       ctx.moveTo(padding, pos);
       ctx.lineTo(padding + (boardSize - 1) * cellSize, pos);
       ctx.stroke();
-      // Vertical
       ctx.beginPath();
       ctx.moveTo(pos, padding);
       ctx.lineTo(pos, padding + (boardSize - 1) * cellSize);
@@ -145,15 +152,13 @@ export default function GoBoard({
     ctx.textBaseline = 'middle';
     const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
     for (let i = 0; i < boardSize; i++) {
-      // Top labels
       const lx = padding + i * cellSize;
       ctx.fillText(COL_LETTERS[i], lx, padding * 0.4);
-      // Left labels
       const ly = padding + i * cellSize;
       ctx.fillText(String(boardSize - i), padding * 0.35, ly);
     }
 
-    // Analysis move suggestions - max 5, color-coded by rank
+    // Analysis move suggestions - max 5, color-coded by rank & prior
     if (analysisData.length > 0) {
       const topMoves = analysisData.slice(0, 5);
       // Color rules: 1st=yellow, 2nd=blue, 3rd=green, 4th-5th or prior<0.3=red
@@ -173,33 +178,58 @@ export default function GoBoard({
           if (board[row][col] !== null) continue;
           const { x, y } = getCellPos(row, col);
 
-          // Determine color: if prior < 0.3, override to red
+          // Color: if prior < 0.3 (30%), override to red regardless of rank
           const isLowPrior = (info.prior ?? 0) < 0.3;
-          const colorIdx = isLowPrior ? 3 : idx; // red for low prior
+          const colorIdx = isLowPrior ? 3 : idx;
           const clr = SUGGESTION_COLORS[Math.min(colorIdx, SUGGESTION_COLORS.length - 1)];
-          const alpha = Math.max(0.35, Math.min(0.85, (info.prior ?? 0.1) * 4));
+          const alpha = Math.max(0.5, Math.min(0.9, (info.prior ?? 0.1) * 3 + 0.3));
 
-          // Draw suggestion circle
+          // Draw suggestion circle — same size as a stone
           ctx.fillStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, ${alpha})`;
           ctx.beginPath();
-          ctx.arc(x, y, stoneRadius * 0.42, 0, Math.PI * 2);
+          ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
           ctx.fill();
 
-          // Pulsing border for top suggestion
+          // Border for all suggestions
+          ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, ${alpha + 0.1})`;
+          ctx.lineWidth = idx === 0 ? 2 : 1.5;
+          ctx.beginPath();
+          ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Pulsing outer ring for top suggestion
           if (idx === 0) {
-            ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, 0.6)`;
+            ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, 0.4)`;
             ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.arc(x, y, stoneRadius * 0.52, 0, Math.PI * 2);
+            ctx.arc(x, y, stoneRadius + 3, 0, Math.PI * 2);
             ctx.stroke();
           }
 
-          // Winrate text
+          // Winrate text (top line)
+          const winrateText = `${Math.round(info.winrate * 100)}%`;
+          // Score text (bottom line)
+          const scoreText = info.scoreMean !== undefined
+            ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
+            : '';
+
           ctx.fillStyle = 'rgba(255,255,255,0.95)';
-          ctx.font = `bold ${Math.max(9, stoneRadius * 0.5)}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(`${Math.round(info.winrate * 100)}%`, x, y);
+
+          if (scoreText) {
+            // Two lines: winrate on top, score on bottom
+            const fontSize = Math.max(9, stoneRadius * 0.55);
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillText(winrateText, x, y - fontSize * 0.4);
+            ctx.font = `${fontSize * 0.85}px sans-serif`;
+            ctx.fillText(scoreText, x, y + fontSize * 0.5);
+          } else {
+            // Single line: just winrate
+            const fontSize = Math.max(10, stoneRadius * 0.6);
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillText(winrateText, x, y);
+          }
         } catch {
           // Skip invalid coordinates
         }
@@ -267,6 +297,42 @@ export default function GoBoard({
       }
     }
 
+    // Variation moves overlay (not loaded into move tree)
+    if (variationMoves && variationMoves.length > 0) {
+      for (const vm of variationMoves) {
+        const { x, y } = getCellPos(vm.row, vm.col);
+
+        // Semi-transparent stone
+        ctx.save();
+        ctx.globalAlpha = 0.65;
+        if (vm.color === 'black') {
+          ctx.fillStyle = '#1A1A1A';
+        } else {
+          ctx.fillStyle = '#F0F0F0';
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, stoneRadius * 0.85, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dashed border to distinguish from real stones
+        ctx.strokeStyle = vm.color === 'black' ? '#E8B931' : '#4A9EFF';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(x, y, stoneRadius * 0.85, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Move number
+        ctx.fillStyle = vm.color === 'black' ? '#FFFFFF' : '#1A1A1A';
+        ctx.font = `bold ${Math.max(9, stoneRadius * 0.6)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(vm.moveNumber), x, y);
+      }
+    }
+
     // Last move marker
     if (lastMove) {
       const { x, y } = getCellPos(lastMove.row, lastMove.col);
@@ -292,7 +358,7 @@ export default function GoBoard({
         ctx.restore();
       }
     }
-  }, [boardSize, board, analysisData, lastMove, hoverCoord, currentPlayer, canvasSize, getCellPos, cellSize, padding, stoneRadius]);
+  }, [boardSize, board, analysisData, lastMove, hoverCoord, currentPlayer, canvasSize, getCellPos, cellSize, padding, stoneRadius, variationMoves]);
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {

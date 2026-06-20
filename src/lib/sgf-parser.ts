@@ -303,6 +303,16 @@ export function sgfToMoveTree(sgfText: string): {
   }
 }
 
+/** Parse SGF content string directly into a MoveNode tree */
+export function parseSgfContent(sgfText: string): {
+  tree: MoveNode;
+  boardSize: number;
+  komi: number;
+  rules: string;
+} | null {
+  return sgfToMoveTree(sgfText);
+}
+
 /** Read an SGF file and parse it */
 export async function readSgfFile(file: File): Promise<{
   tree: MoveNode;

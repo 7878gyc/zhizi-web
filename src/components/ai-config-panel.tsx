@@ -10,12 +10,26 @@ interface AiConfigPanelProps {
   selectedConfig: AiConfig | null;
   onSelectConfig: (config: AiConfig) => void;
   isConnected: boolean;
+  isConnecting: boolean;
+  isAnalyzing: boolean;
+  onStartAnalysis: () => void;
+  onStopAnalysis: () => void;
+  isAutoAnalyzing: boolean;
+  onToggleAutoAnalyze: () => void;
+  error: string | null;
 }
 
 export default function AiConfigPanel({
   selectedConfig,
   onSelectConfig,
   isConnected,
+  isConnecting,
+  isAnalyzing,
+  onStartAnalysis,
+  onStopAnalysis,
+  isAutoAnalyzing,
+  onToggleAutoAnalyze,
+  error,
 }: AiConfigPanelProps) {
   return (
     <div className="space-y-3">
@@ -26,10 +40,12 @@ export default function AiConfigPanel({
           className={`text-xs ${
             isConnected
               ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-              : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+              : isConnecting
+                ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
           }`}
         >
-          {isConnected ? '已连接' : '未连接'}
+          {isConnected ? '已连接' : isConnecting ? '连接中...' : '未连接'}
         </Badge>
       </div>
 
@@ -74,6 +90,51 @@ export default function AiConfigPanel({
             <span className="text-[#4A4A6A]">平台</span>
             <span className="ml-1 text-[#E0E0E0]">{selectedConfig.platform}</span>
           </div>
+        </div>
+      )}
+
+      {/* Start/Stop analysis buttons */}
+      <div className="flex gap-2">
+        {!isConnected ? (
+          <button
+            onClick={onStartAnalysis}
+            disabled={!selectedConfig || isConnecting}
+            className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors
+              bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30
+              hover:bg-[#E8B931]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isConnecting ? '连接中...' : '开始分析'}
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={onStopAnalysis}
+              className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors
+                bg-[#FF6B6B]/15 text-[#FF6B6B] border border-[#FF6B6B]/30
+                hover:bg-[#FF6B6B]/25"
+            >
+              停止分析
+            </button>
+            <button
+              onClick={onToggleAutoAnalyze}
+              disabled={!isConnected}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded transition-colors border
+                ${isAutoAnalyzing
+                  ? 'bg-[#4A9EFF]/20 text-[#4A9EFF] border-[#4A9EFF]/30 hover:bg-[#4A9EFF]/30'
+                  : 'bg-[#2A3A5C]/40 text-[#8B8FA3] border-[#2A3A5C] hover:bg-[#2A3A5C]/60 hover:text-[#C0C0C0]'
+                }
+                disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+              {isAutoAnalyzing ? '自动中' : '自动分析'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="text-xs text-[#FF6B6B] bg-[#FF6B6B]/10 rounded px-2 py-1.5">
+          {error}
         </div>
       )}
     </div>

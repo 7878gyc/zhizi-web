@@ -25,8 +25,8 @@ export interface SyncParams {
   komi: number;
   rules: string;
   player: 'black' | 'white';
-  moves: string[];   // GTP moves like ["B Q16", "W D4", ...]
-  handicapStones?: string[]; // e.g. ["D4", "Q16"]
+  moves: string[];
+  handicapStones?: string[];
   analyzeVisits?: number;
 }
 
@@ -40,41 +40,34 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  const stdoutBuffer = useRef('');
-
   const processStdout = useCallback((text: string) => {
     const lines = text.split('\n');
-    const newAnalysis: AnalysisInfo[] = [];
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('info ')) {
-        const info = parseAnalysisLine(trimmed);
-        if (info) {
-          newAnalysis.push(info);
-        }
-      }
-    }
+      if (!trimmed.startsWith('info ')) continue;
 
-    if (newAnalysis.length > 0) {
+      const info = parseAnalysisLine(trimmed);
+      if (!info) continue;
+
+      // Single info line may contain multiple move suggestions
+      // Each "info" line represents one suggestion
       setAnalysisData((prev) => {
-        // Merge with existing: update same moves, add new ones
+        // Replace existing data with new batch from this analysis run
+        // Keep moves from the same analysis, sort by order
         const merged = new Map<string, AnalysisInfo>();
-        for (const item of prev) {
+        // Only keep moves from the same "run" — if this info has order=0, start fresh
+        const existing = (info.order === 0) ? [] : prev;
+        for (const item of existing) {
           merged.set(item.move, item);
         }
-        for (const item of newAnalysis) {
-          merged.set(item.move, item);
-        }
+        merged.set(info.move, info);
         return Array.from(merged.values()).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       });
 
-      // Update winrate from the best move (order 0 or first)
-      const bestMove = newAnalysis.reduce((best, curr) =>
-        (curr.order ?? 999) < (best.order ?? 999) ? curr : best
-      , newAnalysis[0]);
-      if (bestMove?.winrate !== undefined) {
-        setCurrentWinrate(bestMove.winrate);
+      // Update winrate from the best move (order 0)
+      if (info.order === 0 && info.winrate !== undefined) {
+        setCurrentWinrate(info.winrate);
       }
     }
   }, []);
@@ -106,7 +99,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
 
       const data = await resp.json();
       if (!resp.ok || !data.token || !data.socketIOURL) {
-        setError(data.error || data.key || '获取 WebSocket 令牌失败');
+        setError(data.error || data.key || data.message || '获取 WebSocket 令牌失败');
         setIsConnecting(false);
         return;
       }
@@ -135,7 +128,6 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         const text = typeof payload === 'string'
           ? payload
           : new TextDecoder().decode(payload);
-        stdoutBuffer.current += text;
         processStdout(text);
       });
 
@@ -143,7 +135,6 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         const text = typeof payload === 'string'
           ? payload
           : new TextDecoder().decode(payload);
-        // We can log stderr for debugging
         console.debug('[GTP stderr]', text);
       });
 
@@ -173,6 +164,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     setAiReady(false);
     setIsAnalyzing(false);
     setIsConnected(false);
+    setIsConnecting(false);
     setAnalysisData([]);
     setCurrentWinrate(null);
   }, []);
@@ -210,9 +202,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       commands.push(`play ${move}`);
     }
 
-    // Start analysis
-    const visits = params.analyzeVisits || 50;
-    commands.push(`kata-analyze ${params.player} ${visits}`);
+    // Start analysis — use lz-analyze format with interval
+    // lz-analyze <color> <visits> — sends periodic updates
+    const visits = params.analyzeVisits || 200;
+    commands.push(`lz-analyze ${params.player} ${visits}`);
 
     // Send all commands
     for (const cmd of commands) {
