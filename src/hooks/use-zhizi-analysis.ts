@@ -11,6 +11,7 @@ interface UseZhiziAnalysisReturn {
   isConnecting: boolean;
   isAnalyzing: boolean;
   aiReady: boolean;
+  isConnected: boolean;
   currentWinrate: number | null;
   error: string | null;
   connect: (config: AiConfig) => Promise<void>;
@@ -37,6 +38,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [aiReady, setAiReady] = useState(false);
   const [currentWinrate, setCurrentWinrate] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   const stdoutBuffer = useRef('');
 
@@ -120,7 +122,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       socketRef.current = socket;
 
       socket.on('connect', () => {
-        // Connected, waiting for ready
+        setIsConnected(true);
       });
 
       socket.on('ready', () => {
@@ -149,6 +151,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         setAiReady(false);
         setIsAnalyzing(false);
         setIsConnecting(false);
+        setIsConnected(false);
       });
 
       socket.on('connect_error', (err: Error) => {
@@ -169,6 +172,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     }
     setAiReady(false);
     setIsAnalyzing(false);
+    setIsConnected(false);
     setAnalysisData([]);
     setCurrentWinrate(null);
   }, []);
@@ -230,6 +234,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     isConnecting,
     isAnalyzing,
     aiReady,
+    isConnected,
     currentWinrate,
     error,
     connect,

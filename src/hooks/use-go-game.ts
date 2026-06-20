@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { GoStone, MoveRecord } from '@/lib/go-types';
-import { coordToGTP } from '@/lib/go-types';
+import type { GoStone, MoveNode } from '@/lib/go-types';
+import { coordToGTP, findNode, getPathToNode, generateNodeId, createRootNode } from '@/lib/go-types';
 
 interface UseGoGameReturn {
   board: ('black' | 'white' | null)[][];
@@ -10,16 +10,25 @@ interface UseGoGameReturn {
   komi: number;
   rules: string;
   currentPlayer: 'black' | 'white';
-  moveHistory: MoveRecord[];
+  moveTree: MoveNode;
+  currentNodeId: string;
   lastMove: { row: number; col: number } | null;
-  gtpMoves: string[]; // GTP format moves for sync
+  gtpMoves: string[];
+  totalMoves: number;          // total moves in current path
+  currentMoveNumber: number;   // 0-based move number of current node
+  winrateHistory: (number | null)[];  // winrate per move along current path
   placeStone: (row: number, col: number) => boolean;
-  undoMove: () => void;
+  goToPrevMove: () => void;
+  goToNextMove: () => void;
+  jumpToNode: (nodeId: string) => void;
+  deleteNode: (nodeId: string) => void;
+  deleteBranch: (nodeId: string) => void;
   resetBoard: () => void;
   setBoardSize: (size: number) => void;
   setKomi: (komi: number) => void;
   setRules: (rules: string) => void;
-  jumpToMove: (index: number) => void;
+  loadFromTree: (tree: MoveNode, targetNodeId?: string) => void;
+  setCurrentWinrate: (winrate: number) => void;
 }
 
 function createEmptyBoard(size: number): ('black' | 'white' | null)[][] {
@@ -72,124 +81,252 @@ function getGroup(
   return { stones, liberties: libertySet.size };
 }
 
+/** Replay board from a path of move nodes */
+function replayBoardFromPath(
+  path: MoveNode[],
+  boardSize: number
+): { board: ('black' | 'white' | null)[][]; nextPlayer: 'black' | 'white' } {
+  const board = createEmptyBoard(boardSize);
+  let nextPlayer: 'black' | 'white' = 'black';
+
+  // Skip root (index 0)
+  for (let i = 1; i < path.length; i++) {
+    const node = path[i];
+    if (node.move === 'root' || !node.color) continue;
+
+    const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
+    const letter = node.move[0].toUpperCase();
+    const number = parseInt(node.move.slice(1), 10);
+    const row = boardSize - number;
+    const col = COL_LETTERS.indexOf(letter);
+
+    if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) continue;
+
+    board[row][col] = node.color;
+    const opponent = node.color === 'black' ? 'white' : 'black';
+
+    // Handle captures
+    for (const [nr, nc] of getNeighbors(row, col, boardSize)) {
+      if (board[nr][nc] === opponent) {
+        const group = getGroup(board, nr, nc, boardSize);
+        if (group.liberties === 0) {
+          for (const [sr, sc] of group.stones) {
+            board[sr][sc] = null;
+          }
+        }
+      }
+    }
+
+    nextPlayer = opponent;
+  }
+
+  return { board, nextPlayer };
+}
+
+/** Remove a node from its parent's children */
+function removeNodeFromParent(tree: MoveNode, nodeId: string): MoveNode {
+  if (tree.id === nodeId) return tree; // Cannot remove root
+
+  const newChildren: MoveNode[] = [];
+  for (const child of tree.children) {
+    if (child.id === nodeId) {
+      // Skip this child (remove it)
+      continue;
+    }
+    newChildren.push(removeNodeFromParent(child, nodeId));
+  }
+  return { ...tree, children: newChildren };
+}
+
+/** Deep clone a MoveNode tree with updated parentIds */
+function cloneTree(node: MoveNode, newParentId: string | null = null): MoveNode {
+  return {
+    ...node,
+    parentId: newParentId,
+    children: node.children.map(c => cloneTree(c, node.id)),
+  };
+}
+
 export function useGoGame(initialSize: number = 19): UseGoGameReturn {
   const [boardSize, setBoardSizeState] = useState(initialSize);
   const [komi, setKomiState] = useState(6.5);
   const [rules, setRulesState] = useState('chinese');
   const [board, setBoard] = useState<('black' | 'white' | null)[][]>(() => createEmptyBoard(initialSize));
   const [currentPlayer, setCurrentPlayer] = useState<'black' | 'white'>('black');
-  const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
+  const [moveTree, setMoveTree] = useState<MoveNode>(() => createRootNode());
+  const [currentNodeId, setCurrentNodeId] = useState<string>('root');
   const [lastMove, setLastMove] = useState<{ row: number; col: number } | null>(null);
+  const [winrateHistory, setWinrateHistory] = useState<(number | null)[]>([null]);
+
+  /** Navigate to a node and update the board */
+  const navigateToNode = useCallback(
+    (nodeId: string, tree?: MoveNode) => {
+      const targetTree = tree ?? moveTree;
+      const path = getPathToNode(targetTree, nodeId);
+      if (path.length === 0) return;
+
+      const { board: newBoard, nextPlayer } = replayBoardFromPath(path, boardSize);
+
+      setBoard(newBoard);
+      setCurrentPlayer(nextPlayer);
+      setCurrentNodeId(nodeId);
+
+      // Update lastMove
+      const lastNode = path[path.length - 1];
+      if (lastNode.move !== 'root' && lastNode.color) {
+        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
+        const letter = lastNode.move[0].toUpperCase();
+        const number = parseInt(lastNode.move.slice(1), 10);
+        const row = boardSize - number;
+        const col = COL_LETTERS.indexOf(letter);
+        setLastMove({ row, col });
+      } else {
+        setLastMove(null);
+      }
+
+      // Update winrate history along the path
+      const wrHist = path.map(n => n.winrate ?? null);
+      setWinrateHistory(wrHist);
+    },
+    [moveTree, boardSize]
+  );
 
   const placeStone = useCallback(
     (row: number, col: number): boolean => {
       if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) return false;
+      if (board[row][col] !== null) return false;
 
-      setBoard((prevBoard) => {
-        if (prevBoard[row][col] !== null) return prevBoard;
+      // Check if the move is legal (simulate)
+      const simBoard = board.map((r) => [...r]);
+      const color: 'black' | 'white' = currentPlayer;
+      const opponent = color === 'black' ? 'white' : 'black';
+      simBoard[row][col] = color;
 
-        const newBoard = prevBoard.map((r) => [...r]);
-        const color: 'black' | 'white' = currentPlayer;
-        const opponent = color === 'black' ? 'white' : 'black';
-
-        newBoard[row][col] = color;
-
-        // Check for captures
-        const capturedStones: GoStone[] = [];
-        for (const [nr, nc] of getNeighbors(row, col, boardSize)) {
-          if (newBoard[nr][nc] === opponent) {
-            const group = getGroup(newBoard, nr, nc, boardSize);
-            if (group.liberties === 0) {
-              for (const [sr, sc] of group.stones) {
-                capturedStones.push({ row: sr, col: sc, color: opponent });
-                newBoard[sr][sc] = null;
-              }
+      const capturedStones: GoStone[] = [];
+      for (const [nr, nc] of getNeighbors(row, col, boardSize)) {
+        if (simBoard[nr][nc] === opponent) {
+          const group = getGroup(simBoard, nr, nc, boardSize);
+          if (group.liberties === 0) {
+            for (const [sr, sc] of group.stones) {
+              capturedStones.push({ row: sr, col: sc, color: opponent });
+              simBoard[sr][sc] = null;
             }
           }
         }
+      }
 
-        // Check for suicide (illegal move)
-        const selfGroup = getGroup(newBoard, row, col, boardSize);
-        if (selfGroup.liberties === 0 && capturedStones.length === 0) {
-          return prevBoard; // Revert - suicide not allowed
+      // Check suicide
+      const selfGroup = getGroup(simBoard, row, col, boardSize);
+      if (selfGroup.liberties === 0 && capturedStones.length === 0) {
+        return false;
+      }
+
+      const coord = coordToGTP(row, col, boardSize);
+
+      // Check if this move already exists as a child of currentNode
+      const currentNode = findNode(moveTree, currentNodeId);
+      if (currentNode) {
+        const existingChild = currentNode.children.find(c => c.move === coord && c.color === color);
+        if (existingChild) {
+          // Navigate to existing child
+          navigateToNode(existingChild.id);
+          return true;
         }
+      }
 
-        // Valid move - update state via side effects
-        const coord = coordToGTP(row, col, boardSize);
-        setMoveHistory((prev) => [
-          ...prev,
-          {
-            index: prev.length + 1,
-            color,
-            coord,
-            capturedStones: capturedStones.length > 0 ? capturedStones : undefined,
-          },
-        ]);
-        setLastMove({ row, col });
-        setCurrentPlayer(opponent);
+      // Create new node
+      const newNode: MoveNode = {
+        id: generateNodeId(),
+        move: coord,
+        color,
+        capturedStones: capturedStones.length > 0 ? capturedStones : undefined,
+        children: [],
+        parentId: currentNodeId,
+        moveNumber: currentNode ? currentNode.moveNumber + 1 : 1,
+      };
 
-        return newBoard;
-      });
+      // Add to tree
+      const addNodeToTree = (node: MoveNode): MoveNode => {
+        if (node.id === currentNodeId) {
+          return { ...node, children: [...node.children, newNode] };
+        }
+        return { ...node, children: node.children.map(addNodeToTree) };
+      };
+
+      const newTree = addNodeToTree(moveTree);
+      setMoveTree(newTree);
+      navigateToNode(newNode.id, newTree);
 
       return true;
     },
-    [boardSize, currentPlayer]
+    [boardSize, board, currentPlayer, moveTree, currentNodeId, navigateToNode]
   );
 
-  const undoMove = useCallback(() => {
-    if (moveHistory.length === 0) return;
+  const goToPrevMove = useCallback(() => {
+    const currentNode = findNode(moveTree, currentNodeId);
+    if (!currentNode || !currentNode.parentId) return;
+    navigateToNode(currentNode.parentId);
+  }, [moveTree, currentNodeId, navigateToNode]);
 
-    const lastMoveRecord = moveHistory[moveHistory.length - 1];
+  const goToNextMove = useCallback(() => {
+    const currentNode = findNode(moveTree, currentNodeId);
+    if (!currentNode || currentNode.children.length === 0) return;
+    // Follow main branch (first child)
+    navigateToNode(currentNode.children[0].id);
+  }, [moveTree, currentNodeId, navigateToNode]);
 
-    setBoard((prevBoard) => {
-      const newBoard = prevBoard.map((r) => [...r]);
+  const jumpToNode = useCallback(
+    (nodeId: string) => {
+      navigateToNode(nodeId);
+    },
+    [navigateToNode]
+  );
 
-      // Remove the last stone
-      const { row, col } = (() => {
-        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-        const letter = lastMoveRecord.coord[0].toUpperCase();
-        const number = parseInt(lastMoveRecord.coord.slice(1), 10);
-        return { row: boardSize - number, col: COL_LETTERS.indexOf(letter) };
-      })();
-      newBoard[row][col] = null;
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      if (nodeId === 'root') return;
+      const newTree = removeNodeFromParent(moveTree, nodeId);
+      setMoveTree(newTree);
 
-      // Restore captured stones
-      if (lastMoveRecord.capturedStones) {
-        for (const stone of lastMoveRecord.capturedStones) {
-          newBoard[stone.row][stone.col] = stone.color;
+      // If we deleted the current node or an ancestor, go to parent
+      const stillExists = findNode(newTree, currentNodeId);
+      if (!stillExists) {
+        const deletedNode = findNode(moveTree, nodeId);
+        if (deletedNode?.parentId) {
+          navigateToNode(deletedNode.parentId, newTree);
+        } else {
+          navigateToNode('root', newTree);
         }
       }
+    },
+    [moveTree, currentNodeId, navigateToNode]
+  );
 
-      return newBoard;
-    });
-
-    setMoveHistory((prev) => prev.slice(0, -1));
-    setCurrentPlayer((prev) => (prev === 'black' ? 'white' : 'black'));
-    setLastMove(() => {
-      if (moveHistory.length > 1) {
-        const prevMove = moveHistory[moveHistory.length - 2];
-        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-        const letter = prevMove.coord[0].toUpperCase();
-        const number = parseInt(prevMove.coord.slice(1), 10);
-        return { row: boardSize - number, col: COL_LETTERS.indexOf(letter) };
-      }
-      return null;
-    });
-  }, [moveHistory, boardSize]);
+  const deleteBranch = useCallback(
+    (nodeId: string) => {
+      // Same as deleteNode - removes the node and all its descendants
+      deleteNode(nodeId);
+    },
+    [deleteNode]
+  );
 
   const resetBoard = useCallback(() => {
     setBoard(createEmptyBoard(boardSize));
     setCurrentPlayer('black');
-    setMoveHistory([]);
+    setMoveTree(createRootNode());
+    setCurrentNodeId('root');
     setLastMove(null);
+    setWinrateHistory([null]);
   }, [boardSize]);
 
   const setBoardSize = useCallback((size: number) => {
     setBoardSizeState(size);
     setBoard(createEmptyBoard(size));
     setCurrentPlayer('black');
-    setMoveHistory([]);
+    setMoveTree(createRootNode());
+    setCurrentNodeId('root');
     setLastMove(null);
+    setWinrateHistory([null]);
   }, []);
 
   const setKomi = useCallback((k: number) => {
@@ -200,61 +337,53 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
     setRulesState(r);
   }, []);
 
-  const jumpToMove = useCallback(
-    (targetIndex: number) => {
-      // Replay moves up to targetIndex
-      const newBoard = createEmptyBoard(boardSize);
-      let player: 'black' | 'white' = 'black';
-
-      for (let i = 0; i <= targetIndex && i < moveHistory.length; i++) {
-        const move = moveHistory[i];
-        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-        const letter = move.coord[0].toUpperCase();
-        const number = parseInt(move.coord.slice(1), 10);
-        const row = boardSize - number;
-        const col = COL_LETTERS.indexOf(letter);
-
-        if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
-          newBoard[row][col] = move.color;
-
-          // Handle captures for this move
-          const opponent = move.color === 'black' ? 'white' : 'black';
-          for (const [nr, nc] of getNeighbors(row, col, boardSize)) {
-            if (newBoard[nr][nc] === opponent) {
-              const group = getGroup(newBoard, nr, nc, boardSize);
-              if (group.liberties === 0) {
-                for (const [sr, sc] of group.stones) {
-                  newBoard[sr][sc] = null;
-                }
-              }
-            }
-          }
+  const loadFromTree = useCallback(
+    (tree: MoveNode, targetNodeId?: string) => {
+      const cloned = cloneTree(tree);
+      setMoveTree(cloned);
+      const target = targetNodeId ?? (() => {
+        // Default: go to the last node on the main branch
+        let node = cloned;
+        while (node.children.length > 0) {
+          node = node.children[0];
         }
-
-        player = move.color === 'black' ? 'white' : 'black';
-      }
-
-      setBoard(newBoard);
-      setCurrentPlayer(player);
-
-      // Truncate move history
-      const targetMove = moveHistory[targetIndex];
-      if (targetMove) {
-        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-        const letter = targetMove.coord[0].toUpperCase();
-        const number = parseInt(targetMove.coord.slice(1), 10);
-        setLastMove({ row: boardSize - number, col: COL_LETTERS.indexOf(letter) });
-      }
-
-      setMoveHistory((prev) => prev.slice(0, targetIndex + 1));
+        return node.id;
+      })();
+      navigateToNode(target, cloned);
     },
-    [boardSize, moveHistory]
+    [navigateToNode]
   );
 
-  // Build GTP moves array from history
-  const gtpMoves = moveHistory.map(
-    (m) => `${m.color === 'black' ? 'B' : 'W'} ${m.coord}`
+  const setCurrentWinrate = useCallback(
+    (winrate: number) => {
+      // Update winrate on the current node
+      const updateWinrate = (node: MoveNode): MoveNode => {
+        if (node.id === currentNodeId) {
+          return { ...node, winrate };
+        }
+        return { ...node, children: node.children.map(updateWinrate) };
+      };
+      const newTree = updateWinrate(moveTree);
+      setMoveTree(newTree);
+
+      // Also update winrate history
+      setWinrateHistory(prev => {
+        const next = [...prev];
+        next[next.length - 1] = winrate;
+        return next;
+      });
+    },
+    [moveTree, currentNodeId]
   );
+
+  // Build GTP moves array from current path
+  const currentPath = getPathToNode(moveTree, currentNodeId);
+  const gtpMoves = currentPath
+    .filter(n => n.move !== 'root' && n.color)
+    .map(m => `${m.color === 'black' ? 'B' : 'W'} ${m.move}`);
+
+  const totalMoves = gtpMoves.length;
+  const currentMoveNumber = currentPath.length - 1; // 0-based (root=0)
 
   return {
     board,
@@ -262,15 +391,24 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
     komi,
     rules,
     currentPlayer,
-    moveHistory,
+    moveTree,
+    currentNodeId,
     lastMove,
     gtpMoves,
+    totalMoves,
+    currentMoveNumber,
+    winrateHistory,
     placeStone,
-    undoMove,
+    goToPrevMove,
+    goToNextMove,
+    jumpToNode,
+    deleteNode,
+    deleteBranch,
     resetBoard,
     setBoardSize,
     setKomi,
     setRules,
-    jumpToMove,
+    loadFromTree,
+    setCurrentWinrate,
   };
 }

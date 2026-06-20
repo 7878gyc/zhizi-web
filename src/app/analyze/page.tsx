@@ -1,301 +1,318 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
-import MoveHistory from '@/components/move-history';
+import MoveTree from '@/components/move-tree';
+import WinrateChart from '@/components/winrate-chart';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
-import { AI_CONFIGS } from '@/lib/go-types';
+import { getToken, removeToken } from '@/lib/auth';
 import type { AiConfig } from '@/lib/go-types';
-import { getToken, removeToken, isLoggedIn } from '@/lib/auth';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { readSgfFile } from '@/lib/sgf-parser';
 
 export default function AnalyzePage() {
   const router = useRouter();
-  const [selectedConfig, setSelectedConfig] = useState<AiConfig>(AI_CONFIGS[0]);
-  const [hoverCoord, setHoverCoord] = useState<{ row: number; col: number } | null>(null);
-  const [boardSizeOption, setBoardSizeOption] = useState<string>('19');
-
   const game = useGoGame(19);
-  const analysis = useZhiziAnalysis();
+  const [selectedConfig, setSelectedConfig] = useState<AiConfig | null>(null);
+  const [hoverCoord, setHoverCoord] = useState<{ row: number; col: number } | null>(null);
+  const sgfInputRef = useRef<HTMLInputElement>(null);
 
-  // Auth check
+  // Check auth
   useEffect(() => {
-    if (!isLoggedIn()) {
-      router.push('/login');
+    if (!getToken()) {
+      router.replace('/login');
     }
   }, [router]);
 
-  const handleConnect = useCallback(async () => {
-    if (analysis.aiReady) {
-      analysis.disconnect();
-    } else {
-      await analysis.connect(selectedConfig);
-    }
-  }, [analysis, selectedConfig]);
+  const {
+    board,
+    boardSize,
+    komi,
+    rules,
+    currentPlayer,
+    moveTree,
+    currentNodeId,
+    lastMove,
+    gtpMoves,
+    currentMoveNumber,
+    winrateHistory,
+    placeStone,
+    goToPrevMove,
+    goToNextMove,
+    jumpToNode,
+    deleteNode,
+    deleteBranch,
+    resetBoard,
+    setBoardSize,
+    setKomi,
+    setRules,
+    loadFromTree,
+    setCurrentWinrate,
+  } = game;
 
-  const handleAnalyze = useCallback(() => {
-    if (!analysis.aiReady) return;
-    analysis.syncAndAnalyze({
-      boardSize: game.boardSize,
-      komi: game.komi,
-      rules: game.rules,
-      player: game.currentPlayer,
-      moves: game.gtpMoves,
-      analyzeVisits: 100,
-    });
-  }, [analysis, game]);
+  const {
+    analysisData,
+    currentWinrate,
+    isAnalyzing,
+    isConnected,
+    connect,
+    disconnect,
+    syncAndAnalyze,
+  } = useZhiziAnalysis();
+
+  // Sync and analyze whenever moves change and AI is ready
+  const prevMoveCountRef = useRef(0);
+  useEffect(() => {
+    if (isConnected && gtpMoves.length !== prevMoveCountRef.current) {
+      prevMoveCountRef.current = gtpMoves.length;
+      syncAndAnalyze({
+        boardSize,
+        komi,
+        rules,
+        player: currentPlayer,
+        moves: gtpMoves,
+      });
+    }
+  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
+
+  // Auto-connect when config selected
+  useEffect(() => {
+    if (selectedConfig && getToken()) {
+      connect(selectedConfig);
+    }
+    return () => {
+      disconnect();
+    };
+  }, [selectedConfig]);
 
   const handleCellClick = useCallback(
     (row: number, col: number) => {
-      const placed = game.placeStone(row, col);
-      if (placed && analysis.aiReady) {
-        // Auto analyze after placing a stone
-        setTimeout(() => {
-          analysis.syncAndAnalyze({
-            boardSize: game.boardSize,
-            komi: game.komi,
-            rules: game.rules,
-            player: game.currentPlayer,
-            moves: [...game.gtpMoves, `${game.currentPlayer === 'black' ? 'B' : 'W'}`],
-            analyzeVisits: 100,
-          });
-        }, 100);
-      }
+      placeStone(row, col);
     },
-    [game, analysis]
-  );
-
-  const handleUndo = useCallback(() => {
-    game.undoMove();
-    if (analysis.aiReady) {
-      setTimeout(() => {
-        analysis.syncAndAnalyze({
-          boardSize: game.boardSize,
-          komi: game.komi,
-          rules: game.rules,
-          player: game.currentPlayer,
-          moves: game.gtpMoves.slice(0, -1),
-          analyzeVisits: 100,
-        });
-      }, 100);
-    }
-  }, [game, analysis]);
-
-  const handleReset = useCallback(() => {
-    game.resetBoard();
-    analysis.disconnect();
-  }, [game, analysis]);
-
-  const handleBoardSizeChange = useCallback(
-    (val: string) => {
-      setBoardSizeOption(val);
-      const size = parseInt(val, 10);
-      game.setBoardSize(size);
-      analysis.disconnect();
-    },
-    [game, analysis]
+    [placeStone]
   );
 
   const handleLogout = useCallback(() => {
+    disconnect();
     removeToken();
-    router.push('/login');
-  }, [router]);
+    router.replace('/login');
+  }, [disconnect, router]);
+
+  const handleImportSgf = useCallback(async () => {
+    sgfInputRef.current?.click();
+  }, []);
+
+  const handleSgfFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const result = await readSgfFile(file);
+      if (!result) {
+        alert('SGF 文件解析失败，请检查文件格式');
+        return;
+      }
+
+      // Disconnect current analysis
+      disconnect();
+
+      // Update game settings from SGF
+      if (result.boardSize !== boardSize) {
+        setBoardSize(result.boardSize);
+      }
+      setKomi(result.komi);
+      setRules(result.rules);
+
+      // Load the move tree
+      loadFromTree(result.tree);
+    },
+    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree]
+  );
+
+  const canGoPrev = currentNodeId !== 'root';
+  const currentNode = (() => {
+    // Simple find - walk the tree
+    const findInTree = (node: typeof moveTree): typeof moveTree | null => {
+      if (node.id === currentNodeId) return node;
+      for (const child of node.children) {
+        const found = findInTree(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findInTree(moveTree);
+  })();
+  const canGoNext = currentNode !== null && currentNode.children.length > 0;
 
   return (
-    <div className="min-h-screen bg-[#1A1A2E] flex flex-col">
+    <div className="min-h-screen bg-[#0F0F23] text-[#E0E0E0]">
       {/* Top bar */}
-      <header className="h-12 bg-[#16213E]/80 border-b border-[#2A3A5C] flex items-center justify-between px-4 shrink-0">
+      <header className="h-12 bg-[#16213E]/80 border-b border-[#2A3A5C]/50 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-[#1A1A1A] shadow-sm relative">
-              <div className="w-1.5 h-1.5 rounded-full bg-white/70 absolute top-1 left-1.5" />
-            </div>
-            <span className="text-[#E8B931] font-bold text-sm tracking-wide">智子围棋 AI</span>
-          </div>
-          <Separator orientation="vertical" className="h-5 bg-[#2A3A5C]" />
-          <Select value={boardSizeOption} onValueChange={handleBoardSizeChange}>
-            <SelectTrigger className="w-20 h-7 bg-[#1A1A2E] border-[#2A3A5C] text-[#8B8FA3] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
-              <SelectItem value="9" className="text-white text-xs">9路</SelectItem>
-              <SelectItem value="13" className="text-white text-xs">13路</SelectItem>
-              <SelectItem value="19" className="text-white text-xs">19路</SelectItem>
-            </SelectContent>
-          </Select>
+          <h1 className="text-sm font-bold text-[#E8B931] tracking-wide">智子围棋 AI</h1>
+          <span className="text-xs text-[#4A4A6A]">|</span>
+          <span className="text-xs text-[#8B8FA3]">
+            {boardSize}路 · {currentPlayer === 'black' ? '黑' : '白'}方落子
+            {isConnected && ' · AI已连接'}
+          </span>
         </div>
-
         <div className="flex items-center gap-2">
-          <Button
-            onClick={handleLogout}
-            variant="ghost"
-            size="sm"
-            className="text-[#8B8FA3] hover:text-white hover:bg-[#2A3A5C] text-xs h-7"
+          <button
+            onClick={handleImportSgf}
+            className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#C0C0C0] rounded transition-colors"
           >
-            退出登录
-          </Button>
+            导入SGF
+          </button>
+          <input
+            ref={sgfInputRef}
+            type="file"
+            accept=".sgf"
+            className="hidden"
+            onChange={handleSgfFileChange}
+          />
+          <button
+            onClick={handleLogout}
+            className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
+          >
+            退出
+          </button>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: Go board area */}
-        <div className="flex-1 flex items-center justify-center p-4 lg:p-6">
-          <div className="flex flex-col items-center gap-3">
-            <GoBoard
-              boardSize={game.boardSize}
-              board={game.board}
-              currentPlayer={game.currentPlayer}
-              analysisData={analysis.analysisData}
-              onCellClick={handleCellClick}
-              lastMove={game.lastMove}
-              hoverCoord={hoverCoord}
-              onHoverChange={setHoverCoord}
-            />
-            {/* Board controls */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 text-xs text-[#8B8FA3]">
-                <div className={`w-3 h-3 rounded-full ${game.currentPlayer === 'black' ? 'bg-[#1A1A1A] ring-2 ring-[#E8B931]' : 'bg-[#F0F0F0] border border-gray-400 ring-2 ring-[#E8B931]'}`} />
-                <span>{game.currentPlayer === 'black' ? '黑' : '白'}方落子</span>
-              </div>
-              <Separator orientation="vertical" className="h-4 bg-[#2A3A5C]" />
-              <span className="text-xs text-[#4A4A6A]">第 {game.moveHistory.length + 1} 手</span>
-              <Separator orientation="vertical" className="h-4 bg-[#2A3A5C]" />
-              <span className="text-xs text-[#4A4A6A]">贴目 {game.komi}</span>
+      <div className="flex h-[calc(100vh-48px)]">
+        {/* Left: Board area */}
+        <div className="flex-1 flex flex-col items-center justify-center p-4 min-w-0">
+          <GoBoard
+            boardSize={boardSize}
+            board={board}
+            currentPlayer={currentPlayer}
+            analysisData={analysisData}
+            onCellClick={handleCellClick}
+            lastMove={lastMove}
+            hoverCoord={hoverCoord}
+            onHoverChange={setHoverCoord}
+          />
+
+          {/* Board controls */}
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={goToPrevMove}
+              disabled={!canGoPrev}
+              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            >
+              ← 上一步
+            </button>
+            <button
+              onClick={goToNextMove}
+              disabled={!canGoNext}
+              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            >
+              下一步 →
+            </button>
+            <span className="text-[#4A4A6A] text-xs mx-1">|</span>
+            {/* Board size */}
+            {[9, 13, 19].map((size) => (
+              <button
+                key={size}
+                onClick={() => {
+                  if (size !== boardSize) {
+                    disconnect();
+                    setBoardSize(size);
+                  }
+                }}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  boardSize === size
+                    ? 'bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30'
+                    : 'bg-[#16213E] text-[#8B8FA3] hover:bg-[#2A3A5C]'
+                }`}
+              >
+                {size}路
+              </button>
+            ))}
+            <span className="text-[#4A4A6A] text-xs mx-1">|</span>
+            <button
+              onClick={() => {
+                disconnect();
+                resetBoard();
+              }}
+              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
+            >
+              清空
+            </button>
+          </div>
+
+          {/* Rules & Komi */}
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-[#4A4A6A]">规则</span>
+              {(['chinese', 'japanese', 'aga'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRules(r)}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                    rules === r
+                      ? 'bg-[#E8B931]/15 text-[#E8B931]'
+                      : 'text-[#4A4A6A] hover:text-[#8B8FA3]'
+                  }`}
+                >
+                  {r === 'chinese' ? '中国' : r === 'japanese' ? '日本' : 'AGA'}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-[#4A4A6A]">贴目</span>
+              {[5.5, 6.5, 7.5].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setKomi(k)}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                    komi === k
+                      ? 'bg-[#E8B931]/15 text-[#E8B931]'
+                      : 'text-[#4A4A6A] hover:text-[#8B8FA3]'
+                  }`}
+                >
+                  {k}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
         {/* Right: Analysis panel */}
-        <div className="w-80 xl:w-96 bg-[#16213E]/60 border-l border-[#2A3A5C] flex flex-col overflow-y-auto">
-          <div className="p-4 space-y-5">
-            {/* AI Config */}
-            <AiConfigPanel
-              selectedConfig={selectedConfig}
-              onConfigChange={(config) => {
-                setSelectedConfig(config);
-                if (analysis.aiReady) {
-                  analysis.disconnect();
-                }
-              }}
-              aiReady={analysis.aiReady}
-              isConnecting={analysis.isConnecting}
-            />
+        <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
+          {/* AI Config */}
+          <AiConfigPanel
+            selectedConfig={selectedConfig}
+            onSelectConfig={setSelectedConfig}
+            isConnected={isConnected}
+          />
 
-            {/* Connect / Analyze buttons */}
-            <div className="flex gap-2">
-              <Button
-                onClick={handleConnect}
-                className={`flex-1 h-9 text-sm font-medium transition-all ${
-                  analysis.aiReady
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                    : 'bg-[#E8B931] text-[#1A1A2E] hover:bg-[#D4A52A]'
-                }`}
-                disabled={analysis.isConnecting}
-              >
-                {analysis.isConnecting
-                  ? '连接中...'
-                  : analysis.aiReady
-                  ? '断开连接'
-                  : '连接 AI'}
-              </Button>
-              <Button
-                onClick={handleAnalyze}
-                disabled={!analysis.aiReady || analysis.isAnalyzing}
-                className="flex-1 h-9 text-sm font-medium bg-[#4A9EFF]/20 text-[#4A9EFF] hover:bg-[#4A9EFF]/30 border border-[#4A9EFF]/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {analysis.isAnalyzing ? '分析中...' : '开始分析'}
-              </Button>
-            </div>
+          {/* Move tree */}
+          <MoveTree
+            tree={moveTree}
+            currentNodeId={currentNodeId}
+            onJumpToNode={jumpToNode}
+            onDeleteNode={deleteNode}
+            onDeleteBranch={deleteBranch}
+          />
 
-            {/* Error display */}
-            {analysis.error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-md px-3 py-2 text-red-400 text-xs">
-                {analysis.error}
-              </div>
-            )}
+          {/* Winrate chart */}
+          <WinrateChart
+            winrateHistory={winrateHistory}
+            currentMoveNumber={currentMoveNumber}
+          />
 
-            <Separator className="bg-[#2A3A5C]" />
-
-            {/* Analysis results */}
-            <AnalysisPanel
-              analysisData={analysis.analysisData}
-              currentWinrate={analysis.currentWinrate}
-              currentPlayer={game.currentPlayer}
-              isAnalyzing={analysis.isAnalyzing}
-            />
-
-            <Separator className="bg-[#2A3A5C]" />
-
-            {/* Move history */}
-            <MoveHistory
-              moves={game.moveHistory}
-              currentMoveIndex={game.moveHistory.length - 1}
-              onJumpToMove={game.jumpToMove}
-            />
-
-            <Separator className="bg-[#2A3A5C]" />
-
-            {/* Game controls */}
-            <div className="flex gap-2">
-              <Button
-                onClick={handleUndo}
-                variant="outline"
-                size="sm"
-                className="flex-1 bg-[#1A1A2E] border-[#2A3A5C] text-[#8B8FA3] hover:text-white hover:bg-[#2A3A5C] text-xs"
-                disabled={game.moveHistory.length === 0}
-              >
-                悔棋
-              </Button>
-              <Button
-                onClick={handleReset}
-                variant="outline"
-                size="sm"
-                className="flex-1 bg-[#1A1A2E] border-[#2A3A5C] text-[#8B8FA3] hover:text-white hover:bg-[#2A3A5C] text-xs"
-              >
-                清空棋盘
-              </Button>
-            </div>
-
-            {/* Rules & komi settings */}
-            <div className="space-y-2">
-              <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">规则设置</span>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[#4A4A6A] text-xs">贴目</label>
-                  <Select value={String(game.komi)} onValueChange={(v) => game.setKomi(parseFloat(v))}>
-                    <SelectTrigger className="h-7 bg-[#1A1A2E] border-[#2A3A5C] text-white text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
-                      <SelectItem value="5.5" className="text-white text-xs">5.5</SelectItem>
-                      <SelectItem value="6.5" className="text-white text-xs">6.5</SelectItem>
-                      <SelectItem value="7.5" className="text-white text-xs">7.5</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[#4A4A6A] text-xs">规则</label>
-                  <Select value={game.rules} onValueChange={game.setRules}>
-                    <SelectTrigger className="h-7 bg-[#1A1A2E] border-[#2A3A5C] text-white text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
-                      <SelectItem value="chinese" className="text-white text-xs">中国规则</SelectItem>
-                      <SelectItem value="japanese" className="text-white text-xs">日本规则</SelectItem>
-                      <SelectItem value="aga" className="text-white text-xs">AGA 规则</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Analysis panel (winrate bar + suggestion table) */}
+          <AnalysisPanel
+            analysisData={analysisData}
+            currentWinrate={currentWinrate}
+            currentPlayer={currentPlayer}
+            isAnalyzing={isAnalyzing}
+          />
         </div>
       </div>
     </div>

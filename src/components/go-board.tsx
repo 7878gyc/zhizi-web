@@ -153,34 +153,53 @@ export default function GoBoard({
       ctx.fillText(String(boardSize - i), padding * 0.35, ly);
     }
 
-    // Analysis move suggestions (draw before stones so they appear under)
+    // Analysis move suggestions - max 5, color-coded by rank
     if (analysisData.length > 0) {
-      for (const info of analysisData.slice(0, 10)) {
+      const topMoves = analysisData.slice(0, 5);
+      // Color rules: 1st=yellow, 2nd=blue, 3rd=green, 4th-5th or prior<0.3=red
+      const SUGGESTION_COLORS = [
+        { r: 232, g: 185, b: 49 },   // #E8B931 yellow - 1st
+        { r: 74, g: 158, b: 255 },    // #4A9EFF blue - 2nd
+        { r: 74, g: 222, b: 128 },    // #4ADE80 green - 3rd
+        { r: 255, g: 107, b: 107 },   // #FF6B6B red - 4th
+        { r: 255, g: 107, b: 107 },   // #FF6B6B red - 5th
+      ];
+
+      for (let idx = 0; idx < topMoves.length; idx++) {
+        const info = topMoves[idx];
         try {
           const { row, col } = gtpToCoord(info.move, boardSize);
           if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) continue;
           if (board[row][col] !== null) continue;
           const { x, y } = getCellPos(row, col);
-          const alpha = Math.max(0.15, Math.min(0.8, info.prior * 5));
 
-          // Blue or red based on winrate
-          if (info.winrate > 0.5) {
-            ctx.fillStyle = `rgba(74, 158, 255, ${alpha})`;
-          } else {
-            ctx.fillStyle = `rgba(255, 107, 107, ${alpha})`;
-          }
+          // Determine color: if prior < 0.3, override to red
+          const isLowPrior = (info.prior ?? 0) < 0.3;
+          const colorIdx = isLowPrior ? 3 : idx; // red for low prior
+          const clr = SUGGESTION_COLORS[Math.min(colorIdx, SUGGESTION_COLORS.length - 1)];
+          const alpha = Math.max(0.35, Math.min(0.85, (info.prior ?? 0.1) * 4));
+
+          // Draw suggestion circle
+          ctx.fillStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, ${alpha})`;
           ctx.beginPath();
-          ctx.arc(x, y, stoneRadius * 0.4, 0, Math.PI * 2);
+          ctx.arc(x, y, stoneRadius * 0.42, 0, Math.PI * 2);
           ctx.fill();
 
-          // Winrate text on top suggestions
-          if (info.order !== undefined && info.order < 3) {
-            ctx.fillStyle = 'rgba(255,255,255,0.9)';
-            ctx.font = `bold ${Math.max(9, stoneRadius * 0.55)}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${Math.round(info.winrate * 100)}%`, x, y);
+          // Pulsing border for top suggestion
+          if (idx === 0) {
+            ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, 0.6)`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(x, y, stoneRadius * 0.52, 0, Math.PI * 2);
+            ctx.stroke();
           }
+
+          // Winrate text
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.font = `bold ${Math.max(9, stoneRadius * 0.5)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${Math.round(info.winrate * 100)}%`, x, y);
         } catch {
           // Skip invalid coordinates
         }
