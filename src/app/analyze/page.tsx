@@ -151,7 +151,7 @@ export default function AnalyzePage() {
           // Reached leaf, stop auto-analyze
           setIsAutoAnalyzing(false);
         }
-      }, 2000);
+      }, 1000);
     } else {
       if (autoAnalyzeRef.current) {
         clearInterval(autoAnalyzeRef.current);

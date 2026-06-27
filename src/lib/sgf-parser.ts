@@ -158,8 +158,8 @@ export function parseSgf(text: string): SgfParseResult {
 function sgfCoordToRowCol(coord: string, boardSize: number): { row: number; col: number } | null {
   if (coord.length < 2) return null;
 
-  let col = coord.charCodeAt(0) - 97; // 'a' = 0
-  let row = coord.charCodeAt(1) - 97; // 'a' = 0
+  const col = coord.charCodeAt(0) - 97; // 'a' = 0
+  const row = coord.charCodeAt(1) - 97; // 'a' = 0
 
   // In SGF, 'i' is NOT skipped. SGF uses a-s for 19x19 (all 19 letters).
   // So column 'a'=0, 'b'=1, ..., 's'=18
@@ -280,7 +280,7 @@ export function sgfToMoveTree(sgfText: string): {
     };
 
     // Convert SGF nodes to MoveNode children of root
-    let nextColor: 'black' | 'white' = 'black';
+    const nextColor: 'black' | 'white' = 'black';
     // Check if first move property is in root node
     if (root.properties.B || root.properties.W) {
       const moveNode = sgfNodeToMoveNode(root, 'root', 1, boardSize, nextColor);

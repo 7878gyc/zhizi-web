@@ -152,7 +152,7 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         i += 2;
         break;
       case 'winrate':
-        info.winrate = parseFloat(val) / 100;
+        info.winrate = parseFloat(val);
         i += 2;
         break;
       case 'scoreMean':
