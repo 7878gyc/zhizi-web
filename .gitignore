@@ -159,3 +159,4 @@ Desktop.ini
 *.tsbuildinfo
 # Misc
 .coze-logs
+.codegraph
