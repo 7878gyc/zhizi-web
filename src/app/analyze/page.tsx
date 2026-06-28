@@ -7,6 +7,7 @@ import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
 import MoveTree from '@/components/move-tree';
 import WinrateChart from '@/components/winrate-chart';
+import KataGoLogViewer from '@/components/katago-log-viewer';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
@@ -102,6 +103,7 @@ export default function AnalyzePage() {
     isConnected,
     isConnecting,
     error: analysisError,
+    logs,
     connect,
     disconnect,
     syncAndAnalyze,
@@ -151,7 +153,7 @@ export default function AnalyzePage() {
           // Reached leaf, stop auto-analyze
           setIsAutoAnalyzing(false);
         }
-      }, 1000);
+      }, 2000);
     } else {
       if (autoAnalyzeRef.current) {
         clearInterval(autoAnalyzeRef.current);
@@ -530,10 +532,14 @@ export default function AnalyzePage() {
             currentWinrate={currentWinrate}
             currentPlayer={currentPlayer}
             isAnalyzing={isAnalyzing}
+            speed={analysisData.length > 0 ? analysisData[0].speed : undefined}
             onSelectMove={handleSelectMove}
           />
         </div>
       </div>
+
+      {/* KataGo Log Viewer */}
+      <KataGoLogViewer logs={logs} />
     </div>
   );
 }

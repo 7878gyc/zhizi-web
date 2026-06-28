@@ -1,7 +1,7 @@
 'use client';
 
 import type { AiConfig } from '@/lib/go-types';
-import { AI_CONFIGS } from '@/lib/go-types';
+import { GPU_TYPES, WEIGHTS } from '@/lib/go-types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +31,32 @@ export default function AiConfigPanel({
   onToggleAutoAnalyze,
   error,
 }: AiConfigPanelProps) {
+  const handleGpuTypeChange = (gpuType: string) => {
+    const weight = selectedConfig?.kataWeight ?? '28bnbt';
+    const config: AiConfig = {
+      platform: 'all',
+      engineType: 'go',
+      gpuType,
+      kataName: 'katago-TENSORRT',
+      kataWeight: weight,
+      label: `${WEIGHTS.find(w => w.value === weight)?.label} ${GPU_TYPES.find(g => g.value === gpuType)?.label}`,
+    };
+    onSelectConfig(config);
+  };
+
+  const handleWeightChange = (kataWeight: string) => {
+    const gpuType = selectedConfig?.gpuType ?? '1x';
+    const config: AiConfig = {
+      platform: 'all',
+      engineType: 'go',
+      gpuType,
+      kataName: 'katago-TENSORRT',
+      kataWeight,
+      label: `${WEIGHTS.find(w => w.value === kataWeight)?.label} ${GPU_TYPES.find(g => g.value === gpuType)?.label}`,
+    };
+    onSelectConfig(config);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -49,59 +75,61 @@ export default function AiConfigPanel({
         </Badge>
       </div>
 
-      <Select
-        value={selectedConfig?.label ?? ''}
-        onValueChange={(val) => {
-          const config = AI_CONFIGS.find((c) => c.label === val);
-          if (config) onSelectConfig(config);
-        }}
-      >
-        <SelectTrigger className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white text-sm">
-          <SelectValue placeholder="选择配置" />
-        </SelectTrigger>
-        <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
-          {AI_CONFIGS.map((config) => (
-            <SelectItem
-              key={config.label}
-              value={config.label}
-              className="text-white focus:bg-[#2A3A5C] focus:text-white text-sm"
-            >
-              {config.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* GPU Type Selection */}
+      <div className="space-y-1.5">
+        <Label className="text-[#8B8FA3] text-xs">GPU 类型</Label>
+        <Select
+          value={selectedConfig?.gpuType ?? '1x'}
+          onValueChange={handleGpuTypeChange}
+        >
+          <SelectTrigger className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white text-sm">
+            <SelectValue placeholder="选择 GPU" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
+            {GPU_TYPES.map((gpu) => (
+              <SelectItem
+                key={gpu.value}
+                value={gpu.value}
+                className="text-white focus:bg-[#2A3A5C] focus:text-white text-sm"
+              >
+                {gpu.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      {selectedConfig && (
-        <div className="grid grid-cols-2 gap-2 text-xs text-[#8B8FA3]">
-          <div className="bg-[#1A1A2E]/50 rounded px-2 py-1.5">
-            <span className="text-[#4A4A6A]">引擎</span>
-            <span className="ml-1 text-[#E0E0E0]">{selectedConfig.kataName.split('-')[1]}</span>
-          </div>
-          <div className="bg-[#1A1A2E]/50 rounded px-2 py-1.5">
-            <span className="text-[#4A4A6A]">权重</span>
-            <span className="ml-1 text-[#E0E0E0]">{selectedConfig.kataWeight}</span>
-          </div>
-          <div className="bg-[#1A1A2E]/50 rounded px-2 py-1.5">
-            <span className="text-[#4A4A6A]">GPU</span>
-            <span className="ml-1 text-[#E0E0E0]">{selectedConfig.gpuType}</span>
-          </div>
-          <div className="bg-[#1A1A2E]/50 rounded px-2 py-1.5">
-            <span className="text-[#4A4A6A]">平台</span>
-            <span className="ml-1 text-[#E0E0E0]">{selectedConfig.platform}</span>
-          </div>
-        </div>
-      )}
+      {/* Weight Selection */}
+      <div className="space-y-1.5">
+        <Label className="text-[#8B8FA3] text-xs">权重</Label>
+        <Select
+          value={selectedConfig?.kataWeight ?? '28bnbt'}
+          onValueChange={handleWeightChange}
+        >
+          <SelectTrigger className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white text-sm">
+            <SelectValue placeholder="选择权重" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
+            {WEIGHTS.map((weight) => (
+              <SelectItem
+                key={weight.value}
+                value={weight.value}
+                className="text-white focus:bg-[#2A3A5C] focus:text-white text-sm"
+              >
+                {weight.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Start/Stop analysis buttons */}
       <div className="flex gap-2">
         {!isConnected ? (
           <button
             onClick={onStartAnalysis}
-            disabled={!selectedConfig || isConnecting}
-            className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors
-              bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30
-              hover:bg-[#E8B931]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isConnecting || !selectedConfig}
+            className="flex-1 px-3 py-2 bg-[#E8B931] hover:bg-[#E8B931]/90 text-[#1A1A2E] font-medium rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isConnecting ? '连接中...' : '开始分析'}
           </button>
@@ -109,31 +137,26 @@ export default function AiConfigPanel({
           <>
             <button
               onClick={onStopAnalysis}
-              className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors
-                bg-[#FF6B6B]/15 text-[#FF6B6B] border border-[#FF6B6B]/30
-                hover:bg-[#FF6B6B]/25"
+              className="flex-1 px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white font-medium rounded-lg text-sm transition-colors"
             >
               停止分析
             </button>
             <button
               onClick={onToggleAutoAnalyze}
-              disabled={!isConnected}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded transition-colors border
-                ${isAutoAnalyzing
-                  ? 'bg-[#4A9EFF]/20 text-[#4A9EFF] border-[#4A9EFF]/30 hover:bg-[#4A9EFF]/30'
-                  : 'bg-[#2A3A5C]/40 text-[#8B8FA3] border-[#2A3A5C] hover:bg-[#2A3A5C]/60 hover:text-[#C0C0C0]'
-                }
-                disabled:opacity-40 disabled:cursor-not-allowed`}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isAutoAnalyzing
+                  ? 'bg-amber-500/80 hover:bg-amber-500 text-white'
+                  : 'bg-[#2A3A5C] hover:bg-[#2A3A5C]/80 text-white'
+              }`}
             >
-              {isAutoAnalyzing ? '自动中' : '自动分析'}
+              {isAutoAnalyzing ? '自动分析中' : '自动分析'}
             </button>
           </>
         )}
       </div>
 
-      {/* Error message */}
       {error && (
-        <div className="text-xs text-[#FF6B6B] bg-[#FF6B6B]/10 rounded px-2 py-1.5">
+        <div className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
           {error}
         </div>
       )}

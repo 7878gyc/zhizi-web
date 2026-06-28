@@ -11,25 +11,46 @@ import { saveToken } from '@/lib/auth';
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
+  const [authMode, setAuthMode] = useState<'password' | 'code'>('password');
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
   const [error, setError] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const handleLogin = async () => {
     setError('');
-    if (!account || !password) {
-      setError('请填写账号和密码');
-      return;
+    if (authMode === 'password') {
+      if (!account || !password) {
+        setError('请填写账号和密码');
+        return;
+      }
+    } else {
+      if (!account || !verificationCode) {
+        setError('请填写账号和验证码');
+        return;
+      }
     }
     setLoading(true);
     try {
-      const body =
-        loginType === 'phone'
+      let body: Record<string, string>;
+      let endpoint = '/api/auth/login';
+
+      if (authMode === 'password') {
+        body = loginType === 'phone'
           ? { phone: account, password }
           : { email: account, password };
+      } else {
+        endpoint = '/api/auth/fast-login';
+        body = loginType === 'phone'
+          ? { phone: account, verificationCode }
+          : { email: account, verificationCode };
+      }
 
-      const resp = await fetch('/api/auth/login', {
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -52,6 +73,49 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendCode = async () => {
+    setError('');
+    if (!account) {
+      setError(loginType === 'phone' ? '请填写手机号' : '请填写邮箱');
+      return;
+    }
+    setSendingCode(true);
+    try {
+      const body = loginType === 'phone'
+        ? { phone: account, type: 'fast_login' }
+        : { email: account, type: 'fast_login' };
+
+      const resp = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setError(data.key || data.message || data.error || '发送验证码失败');
+        return;
+      }
+
+      setCodeSent(true);
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
+    } finally {
+      setSendingCode(false);
     }
   };
 
@@ -95,7 +159,7 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent className="px-8 pb-8 pt-4">
           {/* Login type tabs */}
-          <div className="flex mb-6 bg-[#1A1A2E]/50 rounded-lg p-1">
+          <div className="flex mb-4 bg-[#1A1A2E]/50 rounded-lg p-1">
             <button
               onClick={() => { setLoginType('phone'); setAccount(''); setError(''); }}
               className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
@@ -104,7 +168,7 @@ export default function LoginPage() {
                   : 'text-[#8B8FA3] hover:text-white'
               }`}
             >
-              手机号登录
+              手机号
             </button>
             <button
               onClick={() => { setLoginType('email'); setAccount(''); setError(''); }}
@@ -114,7 +178,31 @@ export default function LoginPage() {
                   : 'text-[#8B8FA3] hover:text-white'
               }`}
             >
-              邮箱登录
+              邮箱
+            </button>
+          </div>
+
+          {/* Auth mode tabs */}
+          <div className="flex mb-6 bg-[#1A1A2E]/50 rounded-lg p-1">
+            <button
+              onClick={() => { setAuthMode('password'); setError(''); }}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
+                authMode === 'password'
+                  ? 'bg-[#2A3A5C] text-white'
+                  : 'text-[#8B8FA3] hover:text-white'
+              }`}
+            >
+              密码登录
+            </button>
+            <button
+              onClick={() => { setAuthMode('code'); setError(''); }}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
+                authMode === 'code'
+                  ? 'bg-[#2A3A5C] text-white'
+                  : 'text-[#8B8FA3] hover:text-white'
+              }`}
+            >
+              验证码登录
             </button>
           </div>
 
@@ -133,17 +221,40 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-[#8B8FA3] text-xs">密码</Label>
-              <Input
-                type="password"
-                placeholder="请输入密码"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-              />
-            </div>
+            {authMode === 'password' ? (
+              <div className="space-y-2">
+                <Label className="text-[#8B8FA3] text-xs">密码</Label>
+                <Input
+                  type="password"
+                  placeholder="请输入密码"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-[#8B8FA3] text-xs">验证码</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="请输入验证码"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="flex-1 bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+                  />
+                  <Button
+                    onClick={handleSendCode}
+                    disabled={sendingCode || countdown > 0}
+                    className="px-4 bg-[#2A3A5C] hover:bg-[#2A3A5C]/80 text-white text-sm whitespace-nowrap"
+                  >
+                    {sendingCode ? '发送中...' : countdown > 0 ? `${countdown}s` : codeSent ? '重新发送' : '发送验证码'}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-md px-3 py-2 text-red-400 text-sm">

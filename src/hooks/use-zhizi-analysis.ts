@@ -14,6 +14,7 @@ interface UseZhiziAnalysisReturn {
   isConnected: boolean;
   currentWinrate: number | null;
   error: string | null;
+  logs: string[];
   connect: (config: AiConfig) => Promise<void>;
   disconnect: () => void;
   sendGtpCommand: (cmd: string) => void;
@@ -39,6 +40,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [currentWinrate, setCurrentWinrate] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
 
   const processStdout = useCallback((text: string) => {
     const lines = text.split('\n');
@@ -135,7 +137,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         const text = typeof payload === 'string'
           ? payload
           : new TextDecoder().decode(payload);
-        console.debug('[GTP stderr]', text);
+        setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
       });
 
       socket.on('disconnect', () => {
@@ -167,6 +169,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     setIsConnecting(false);
     setAnalysisData([]);
     setCurrentWinrate(null);
+    setLogs([]);
   }, []);
 
   const sendGtpCommand = useCallback((cmd: string) => {
@@ -230,6 +233,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     isConnected,
     currentWinrate,
     error,
+    logs,
     connect,
     disconnect,
     sendGtpCommand,

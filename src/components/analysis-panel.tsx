@@ -7,21 +7,19 @@ interface AnalysisPanelProps {
   currentWinrate: number | null;
   currentPlayer: 'black' | 'white';
   isAnalyzing: boolean;
+  speed?: number;
   onSelectMove?: (info: AnalysisInfo) => void;
 }
 
-// Color rules matching the board: 1st=yellow, 2nd=blue, 3rd=green, 4th-5th or prior<30%=red
-const RANK_COLORS = [
-  '#E8B931', // yellow - 1st
-  '#4A9EFF', // blue - 2nd
-  '#4ADE80', // green - 3rd
-  '#FF6B6B', // red - 4th
-  '#FF6B6B', // red - 5th
-];
-
-function getRankColor(idx: number, prior: number): string {
-  if (prior < 0.3) return '#FF6B6B'; // red for low prior (推荐度低于30%)
-  return RANK_COLORS[Math.min(idx, RANK_COLORS.length - 1)];
+// Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
+function getRankColor(idx: number, prior: number, winrateLoss: number): string {
+  if (prior < 0.2 || winrateLoss > 0.15) return '#FF6B6B'; // red
+  if (idx === 0) return '#4A9EFF'; // blue - 1st
+  if (idx === 1) return '#E8B931'; // yellow - 2nd
+  // 3rd+ green with fading opacity
+  const greenBase = '#4ADE80';
+  const opacity = Math.max(0.3, 1 - (idx - 2) * 0.15);
+  return `${greenBase}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
 }
 
 export default function AnalysisPanel({
@@ -29,13 +27,18 @@ export default function AnalysisPanel({
   currentWinrate,
   currentPlayer,
   isAnalyzing,
+  speed,
   onSelectMove,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
     : null;
 
-  const topMoves = analysisData.slice(0, 5);
+  // Show up to 15 moves
+  const topMoves = analysisData.slice(0, 15);
+  
+  // Calculate best winrate for winrate loss calculation
+  const bestWinrate = topMoves.length > 0 ? Math.max(...topMoves.map(m => m.winrate ?? 0)) : 0;
 
   return (
     <div className="space-y-4">
@@ -57,9 +60,14 @@ export default function AnalysisPanel({
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse" />
           )}
         </div>
+        {speed !== undefined && (
+          <div className="text-[10px] text-[#4A4A6A] text-right">
+            计算速度: {speed.toFixed(0)} v/s
+          </div>
+        )}
       </div>
 
-      {/* Move suggestion table - top 5 with color coding */}
+      {/* Move suggestion table - top 15 with color coding */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">选点表</span>
@@ -71,7 +79,7 @@ export default function AnalysisPanel({
           )}
         </div>
 
-        <div className="space-y-0.5">
+        <div className="space-y-0.5 max-h-[400px] overflow-y-auto">
           {topMoves.length === 0 ? (
             <div className="text-[#4A4A6A] text-xs text-center py-6">
               连接 AI 后开始分析
@@ -79,7 +87,7 @@ export default function AnalysisPanel({
           ) : (
             <>
               {/* Table header */}
-              <div className="flex items-center gap-2 px-2 py-1 text-[10px] text-[#4A4A6A] uppercase tracking-wider border-b border-[#2A3A5C]/50">
+              <div className="flex items-center gap-2 px-2 py-1 text-[10px] text-[#4A4A6A] uppercase tracking-wider border-b border-[#2A3A5C]/50 sticky top-0 bg-[#16213E]">
                 <span className="w-5 text-center">#</span>
                 <span className="w-10">坐标</span>
                 <span className="w-12 text-right">胜率</span>
@@ -89,7 +97,8 @@ export default function AnalysisPanel({
               </div>
               {/* Table rows */}
               {topMoves.map((info, idx) => {
-                const color = getRankColor(idx, info.prior ?? 0);
+                const winrateLoss = bestWinrate - (info.winrate ?? 0);
+                const color = getRankColor(idx, info.prior ?? 0, winrateLoss);
                 return (
                   <div
                     key={`${info.move}-${idx}`}
@@ -116,7 +125,7 @@ export default function AnalysisPanel({
 
                     {/* Winrate */}
                     <span className="w-12 text-right font-mono" style={{ color }}>
-                      {(info.winrate * 100).toFixed(1)}%
+                      {info.winrate !== undefined ? `${(info.winrate * 100).toFixed(1)}%` : '--'}
                     </span>
 
                     {/* Score (目差) */}
@@ -148,9 +157,20 @@ export default function AnalysisPanel({
         <div className="space-y-1.5">
           <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">主要变化</span>
           <div className="bg-[#1A1A2E]/50 rounded px-3 py-2">
-            <span className="font-mono text-sm text-[#E0E0E0] tracking-wider">
-              {analysisData[0].pv.slice(0, 10).join(' ')}
-            </span>
+            <div className="flex flex-wrap gap-1">
+              {analysisData[0].pv!.slice(0, 10).map((move, idx) => (
+                <span
+                  key={idx}
+                  className={`font-mono text-xs px-1.5 py-0.5 rounded ${
+                    idx % 2 === 0
+                      ? 'bg-[#1A1A1A]/50 text-[#E0E0E0]'
+                      : 'bg-[#F0F0F0]/20 text-[#E0E0E0]'
+                  }`}
+                >
+                  {idx + 1}.{move}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       )}

@@ -28,6 +28,7 @@ export interface AnalysisInfo {
   prior: number;      // 0-1
   order: number;
   pv?: string[];      // principal variation
+  speed?: number;     // visits per second
 }
 
 export interface GameState {
@@ -50,48 +51,33 @@ export interface AiConfig {
   label: string;
 }
 
-export const AI_CONFIGS: AiConfig[] = [
-  {
-    platform: 'all',
-    engineType: 'go',
-    gpuType: '1x',
-    kataName: 'katago-TENSORRT',
-    kataWeight: '28bnbt',
-    label: 'TENSORRT 28B (1x GPU)',
-  },
-  {
-    platform: 'all',
-    engineType: 'go',
-    gpuType: '2x',
-    kataName: 'katago-TENSORRT',
-    kataWeight: '28bnbt',
-    label: 'TENSORRT 28B (2x GPU)',
-  },
-  {
-    platform: 'all',
-    engineType: 'go',
-    gpuType: '3x',
-    kataName: 'katago-TENSORRT',
-    kataWeight: '28bnbt',
-    label: 'TENSORRT 28B (3x GPU)',
-  },
-  {
-    platform: 'all',
-    engineType: 'go',
-    gpuType: '4x',
-    kataName: 'katago-TENSORRT',
-    kataWeight: '28bnbt',
-    label: 'TENSORRT 28B (4x GPU)',
-  },
-  {
-    platform: 'all',
-    engineType: 'go',
-    gpuType: 'shared',
-    kataName: 'katago-TENSORRT',
-    kataWeight: '28bnbt',
-    label: 'TENSORRT 28B (会员共享)',
-  },
+// GPU types available
+export const GPU_TYPES = [
+  { value: '1x', label: '1x GPU' },
+  { value: '2x', label: '2x GPU' },
+  { value: '3x', label: '3x GPU' },
+  { value: '4x', label: '4x GPU' },
+  { value: 'shared', label: 'VIP共享' },
 ];
+
+// Weights available
+export const WEIGHTS = [
+  { value: '18b', label: '18b (轻量)' },
+  { value: '28bnbt', label: '28b (标准)' },
+  { value: 'fdx', label: 'fdx (最强)' },
+];
+
+// Generate all combinations
+export const AI_CONFIGS: AiConfig[] = GPU_TYPES.flatMap(gpu =>
+  WEIGHTS.map(weight => ({
+    platform: 'all',
+    engineType: 'go',
+    gpuType: gpu.value,
+    kataName: 'katago-TENSORRT',
+    kataWeight: weight.value,
+    label: `${weight.label} ${gpu.label}`,
+  }))
+);
 
 export function buildArgsString(config: AiConfig): string {
   return `--platform ${config.platform} --engine-type ${config.engineType} --gpu-type ${config.gpuType} --kata-name ${config.kataName} --kata-weight ${config.kataWeight}`;
@@ -152,7 +138,10 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         i += 2;
         break;
       case 'winrate':
-        info.winrate = parseFloat(val);
+        // KataGo outputs winrate as 0-10000 (0-100% with 2 decimal places)
+        // Convert to 0-1 range
+        const wr = parseFloat(val);
+        info.winrate = wr > 1 ? wr / 100 : wr;
         i += 2;
         break;
       case 'scoreMean':
@@ -175,10 +164,14 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         info.order = parseInt(val, 10);
         i += 2;
         break;
+      case 'speed':
+        info.speed = parseFloat(val);
+        i += 2;
+        break;
       case 'pv':
         const pvMoves: string[] = [];
         i += 1;
-        while (i < parts.length && !['move', 'winrate', 'scoreMean', 'scoreStdev', 'visits', 'prior', 'order'].includes(parts[i])) {
+        while (i < parts.length && !['move', 'winrate', 'scoreMean', 'scoreStdev', 'visits', 'prior', 'order', 'speed'].includes(parts[i])) {
           pvMoves.push(parts[i]);
           i += 1;
         }
