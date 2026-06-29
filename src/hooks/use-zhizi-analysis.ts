@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { AnalysisInfo, AiConfig } from '@/lib/go-types';
-import { buildArgsString, parseAnalysisLine } from '@/lib/go-types';
+import { buildArgsString, parseInfoLine } from '@/lib/go-types';
 import { getToken } from '@/lib/auth';
 
 interface UseZhiziAnalysisReturn {
@@ -43,34 +43,22 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [logs, setLogs] = useState<string[]>([]);
 
   const processStdout = useCallback((text: string) => {
-    const lines = text.split('\n');
+    // Handle concatenated info blocks like the sample: split before each "info " token
+    const candidates = parseInfoLine(text);
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('info ')) continue;
+    if (candidates.length === 0) return;
 
-      const info = parseAnalysisLine(trimmed);
-      if (!info) continue;
+    // Sort by order (missing order = 0, same as the sample)
+    candidates.sort((a: AnalysisInfo, b: AnalysisInfo) => (a.order || 0) - (b.order || 0));
 
-      // Single info line may contain multiple move suggestions
-      // Each "info" line represents one suggestion
-      setAnalysisData((prev) => {
-        // Replace existing data with new batch from this analysis run
-        // Keep moves from the same analysis, sort by order
-        const merged = new Map<string, AnalysisInfo>();
-        // Only keep moves from the same "run" — if this info has order=0, start fresh
-        const existing = (info.order === 0) ? [] : prev;
-        for (const item of existing) {
-          merged.set(item.move, item);
-        }
-        merged.set(info.move, info);
-        return Array.from(merged.values()).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-      });
+    // Replace old analysis data with the new batch
+    setAnalysisData(candidates);
 
-      // Update winrate from the best move (order 0)
-      if (info.order === 0 && info.winrate !== undefined) {
-        setCurrentWinrate(info.winrate);
-      }
+    // Update winrate from the best candidate (lowest order, typically order 0)
+    // Fall back to the first candidate if no order field is present
+    const best = candidates[0];
+    if (best && best.winrate !== undefined) {
+      setCurrentWinrate(best.winrate);
     }
   }, []);
 
@@ -146,10 +134,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       socket.on('disconnect', (reason) => {
         setAiReady(false);
         setIsAnalyzing(false);
+        setIsConnecting(false);
+        setIsConnected(false);
         if (reason !== 'io client disconnect') {
-          setIsConnecting(true);
-        } else {
-          setIsConnected(false);
+          setError('连接断开，正在重连...');
         }
       });
 
@@ -188,6 +176,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     if (!socketRef.current?.connected) return;
 
     setIsAnalyzing(true);
+    setAnalysisData([]);
 
     const commands: string[] = [];
 
@@ -209,10 +198,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       commands.push(`play ${move}`);
     }
 
-    // Start analysis — use lz-analyze format with interval
-    // lz-analyze <color> <visits> — sends periodic updates
-    const visits = params.analyzeVisits || 200;
-    commands.push(`lz-analyze ${params.player} ${visits}`);
+    // Start analysis — use kata-analyze (interval in centiseconds, same as the sample)
+    const interval = params.analyzeVisits || 50;
+    const player = params.player === 'black' ? 'B' : 'W';
+    commands.push(`kata-analyze ${player} ${interval}`);
 
     // Send all commands
     for (const cmd of commands) {

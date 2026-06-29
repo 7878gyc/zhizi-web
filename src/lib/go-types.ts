@@ -121,78 +121,77 @@ export function sgfToGTP(sgf: string, boardSize: number = 19): string {
   return coordToGTP(row, col, boardSize);
 }
 
-// --- Parse kata-analyze output line ---
-export function parseAnalysisLine(line: string): AnalysisInfo | null {
-  if (!line.startsWith('info ')) return null;
+// --- Parse kata-analyze / lz-analyze output ---
 
-  const parts = line.slice(5).trim().split(/\s+/);
-  const info: Partial<AnalysisInfo> = {};
+const SCALAR_KEYS = new Set([
+  'move',
+  'visits',
+  'edgeVisits',
+  'utility',
+  'winrate',
+  'scoreMean',
+  'scoreStdev',
+  'scoreLead',
+  'scoreSelfplay',
+  'prior',
+  'lcb',
+  'utilityLcb',
+  'weight',
+  'order',
+]);
 
+const NUMERIC_INT_KEYS = new Set(['visits', 'edgeVisits', 'order']);
+
+/** Parse a single "info ..." block (without the leading "info ")。*/
+function parseInfoBlock(block: string): Partial<AnalysisInfo> {
+  const tokens = block.trim().split(/\s+/).filter(Boolean);
+  const info: Record<string, string | number | string[]> = {};
   let i = 0;
-  while (i < parts.length) {
-    const key = parts[i];
-    const val = parts[i + 1];
+  while (i < tokens.length) {
+    const key = tokens[i];
+    if (key === 'pv') {
+      info.pv = tokens.slice(i + 1);
+      break;
+    }
+    if (!SCALAR_KEYS.has(key)) {
+      // Unknown key; stop parsing this block
+      break;
+    }
+    const val = tokens[i + 1];
+    if (val === undefined) break;
+    if (NUMERIC_INT_KEYS.has(key)) info[key] = parseInt(val, 10);
+    else if (key === 'move') info[key] = val;
+    else info[key] = parseFloat(val);
+    i += 2;
+  }
+  return info;
+}
 
-    switch (key) {
-      case 'move':
-        info.move = val;
-        i += 2;
-        break;
-      case 'winrate':
-        // lz-analyze: integer 0-10000 (e.g. 5542 = 55.42%)
-        // kata-analyze: float 0-1 (e.g. 0.5542 = 55.42%)
-        const wr = parseFloat(val);
-        info.winrate = wr > 1 ? wr / 10000 : wr;
-        i += 2;
-        break;
-      case 'scoreMean':
-        info.scoreMean = parseFloat(val);
-        i += 2;
-        break;
-      case 'scoreStdev':
-        info.scoreStdev = parseFloat(val);
-        i += 2;
-        break;
-      case 'scoreLead':
-        info.scoreLead = parseFloat(val);
-        i += 2;
-        break;
-      case 'visits':
-        info.visits = parseInt(val, 10);
-        i += 2;
-        break;
-      case 'prior':
-        const pr = parseFloat(val);
-        info.prior = pr > 1 ? pr / 10000 : pr;
-        i += 2;
-        break;
-      case 'order':
-        info.order = parseInt(val, 10);
-        i += 2;
-        break;
-      case 'speed':
-        info.speed = parseFloat(val);
-        i += 2;
-        break;
-      case 'pv':
-        const pvMoves: string[] = [];
-        i += 1;
-        while (i < parts.length && !['move', 'winrate', 'scoreMean', 'scoreStdev', 'scoreLead', 'visits', 'prior', 'order', 'speed'].includes(parts[i])) {
-          pvMoves.push(parts[i]);
-          i += 1;
-        }
-        info.pv = pvMoves;
-        break;
-      default:
-        i += 1;
-        break;
+/** Parse one or more concatenated info blocks from a line。*/
+export function parseInfoLine(line: string): AnalysisInfo[] {
+  // Split before each standalone lowercase "info" token
+  const segments = line.split(/(?=\binfo\s)/);
+  const candidates: AnalysisInfo[] = [];
+  for (const seg of segments) {
+    const trimmed = seg.trim();
+    if (!trimmed.startsWith('info ')) continue;
+    const block = trimmed.slice('info '.length);
+    const info = parseInfoBlock(block);
+    if (info.move) {
+      const result = info as AnalysisInfo;
+      result.winrate = result.winrate > 1 ? result.winrate / 10000 : result.winrate;
+      result.prior = result.prior > 1 ? result.prior / 10000 : result.prior;
+      candidates.push(result);
     }
   }
+  return candidates;
+}
 
-  if (info.move !== undefined) {
-    return info as AnalysisInfo;
-  }
-  return null;
+export function parseAnalysisLine(line: string): AnalysisInfo | null {
+  // Legacy compatibility: callers that still use this single-result API
+  // get the first candidate only; new code should use parseInfoLine directly.
+  const candidates = parseInfoLine(line);
+  return candidates.length > 0 ? candidates[0] : null;
 }
 
 // --- Move Tree utilities ---
