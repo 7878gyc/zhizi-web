@@ -25,7 +25,14 @@ interface VariationMove {
 export default function AnalyzePage() {
   const router = useRouter();
   const game = useGoGame(19);
-  const [selectedConfig, setSelectedConfig] = useState<AiConfig | null>(null);
+  const [selectedConfig, setSelectedConfig] = useState<AiConfig>({
+    platform: 'all',
+    engineType: 'go',
+    gpuType: '1x',
+    kataName: 'katago-TENSORRT',
+    kataWeight: '28bnbt',
+    label: '28b (标准) 1x GPU',
+  });
   const [hoverCoord, setHoverCoord] = useState<{ row: number; col: number } | null>(null);
   const sgfInputRef = useRef<HTMLInputElement>(null);
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
@@ -109,25 +116,6 @@ export default function AnalyzePage() {
     syncAndAnalyze,
   } = useZhiziAnalysis();
 
-  // Auto-connect on page load with default config
-  const autoConnectRef = useRef(false);
-  useEffect(() => {
-    if (autoConnectRef.current) return;
-    if (getToken() && !isConnected && !isConnecting) {
-      autoConnectRef.current = true;
-      const defaultConfig: AiConfig = {
-        platform: 'all',
-        engineType: 'go',
-        gpuType: '1x',
-        kataName: 'katago-TENSORRT',
-        kataWeight: '28bnbt',
-        label: '28b (标准) 1x GPU',
-      };
-      setSelectedConfig(defaultConfig);
-      connect(defaultConfig);
-    }
-  }, [isConnected, isConnecting, connect]);
-
   // Sync winrate to game state when it changes
   useEffect(() => {
     if (currentWinrate !== null && currentWinrate >= 0 && currentWinrate <= 1) {
@@ -188,7 +176,7 @@ export default function AnalyzePage() {
 
   // Start analysis (manual)
   const handleStartAnalysis = useCallback(() => {
-    if (selectedConfig && getToken()) {
+    if (getToken()) {
       connect(selectedConfig);
     }
   }, [selectedConfig, connect]);
