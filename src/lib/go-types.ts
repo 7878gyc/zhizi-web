@@ -24,6 +24,7 @@ export interface AnalysisInfo {
   winrate: number;    // 0-1
   scoreMean: number;
   scoreStdev: number;
+  scoreLead?: number;
   visits: number;
   prior: number;      // 0-1
   order: number;
@@ -138,10 +139,10 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         i += 2;
         break;
       case 'winrate':
-        // KataGo outputs winrate as 0-10000 (0-100% with 2 decimal places)
-        // Convert to 0-1 range
+        // lz-analyze: integer 0-10000 (e.g. 5542 = 55.42%)
+        // kata-analyze: float 0-1 (e.g. 0.5542 = 55.42%)
         const wr = parseFloat(val);
-        info.winrate = wr > 1 ? wr / 100 : wr;
+        info.winrate = wr > 1 ? wr / 10000 : wr;
         i += 2;
         break;
       case 'scoreMean':
@@ -150,6 +151,10 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         break;
       case 'scoreStdev':
         info.scoreStdev = parseFloat(val);
+        i += 2;
+        break;
+      case 'scoreLead':
+        info.scoreLead = parseFloat(val);
         i += 2;
         break;
       case 'visits':
@@ -171,7 +176,7 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
       case 'pv':
         const pvMoves: string[] = [];
         i += 1;
-        while (i < parts.length && !['move', 'winrate', 'scoreMean', 'scoreStdev', 'visits', 'prior', 'order', 'speed'].includes(parts[i])) {
+        while (i < parts.length && !['move', 'winrate', 'scoreMean', 'scoreStdev', 'scoreLead', 'visits', 'prior', 'order', 'speed'].includes(parts[i])) {
           pvMoves.push(parts[i]);
           i += 1;
         }

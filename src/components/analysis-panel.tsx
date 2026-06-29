@@ -130,9 +130,11 @@ export default function AnalysisPanel({
 
                     {/* Score (目差) */}
                     <span className="w-12 text-right font-mono text-[#8B8FA3]">
-                      {info.scoreMean !== undefined
-                        ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
-                        : '--'}
+                      {info.scoreLead !== undefined
+                        ? `${info.scoreLead > 0 ? '+' : ''}${info.scoreLead.toFixed(1)}`
+                        : info.scoreMean !== undefined
+                          ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
+                          : '--'}
                     </span>
 
                     {/* Visits */}
