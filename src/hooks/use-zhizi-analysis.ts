@@ -111,7 +111,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         path: '/socket.io.v4',
         query: { 'zz-socketio-token': data.token },
         transports: ['websocket'],
-        reconnection: false,
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
       });
 
       socketRef.current = socket;
@@ -140,11 +143,14 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
       });
 
-      socket.on('disconnect', () => {
+      socket.on('disconnect', (reason) => {
         setAiReady(false);
         setIsAnalyzing(false);
-        setIsConnecting(false);
-        setIsConnected(false);
+        if (reason !== 'io client disconnect') {
+          setIsConnecting(true);
+        } else {
+          setIsConnected(false);
+        }
       });
 
       socket.on('connect_error', (err: Error) => {
@@ -181,9 +187,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const syncAndAnalyze = useCallback((params: SyncParams) => {
     if (!socketRef.current?.connected) return;
 
-    setAnalysisData([]);
     setIsAnalyzing(true);
-    setCurrentWinrate(null);
 
     const commands: string[] = [];
 

@@ -109,6 +109,25 @@ export default function AnalyzePage() {
     syncAndAnalyze,
   } = useZhiziAnalysis();
 
+  // Auto-connect on page load with default config
+  const autoConnectRef = useRef(false);
+  useEffect(() => {
+    if (autoConnectRef.current) return;
+    if (getToken() && !isConnected && !isConnecting) {
+      autoConnectRef.current = true;
+      const defaultConfig: AiConfig = {
+        platform: 'all',
+        engineType: 'go',
+        gpuType: '1x',
+        kataName: 'katago-TENSORRT',
+        kataWeight: '28bnbt',
+        label: '28b (标准) 1x GPU',
+      };
+      setSelectedConfig(defaultConfig);
+      connect(defaultConfig);
+    }
+  }, [isConnected, isConnecting, connect]);
+
   // Sync winrate to game state when it changes
   useEffect(() => {
     if (currentWinrate !== null && currentWinrate >= 0 && currentWinrate <= 1) {

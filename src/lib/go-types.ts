@@ -162,7 +162,8 @@ export function parseAnalysisLine(line: string): AnalysisInfo | null {
         i += 2;
         break;
       case 'prior':
-        info.prior = parseFloat(val);
+        const pr = parseFloat(val);
+        info.prior = pr > 1 ? pr / 10000 : pr;
         i += 2;
         break;
       case 'order':
