@@ -42,23 +42,16 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  const processStdout = useCallback((payload: unknown) => {
-    // Robust decode similar to the sample code
-    let text = '';
-    if (payload === null || payload === undefined) {
-      text = '';
-    } else if (typeof payload === 'string') {
-      text = payload;
-    } else if (payload instanceof ArrayBuffer) {
-      text = new TextDecoder().decode(payload);
-    } else if (ArrayBuffer.isView(payload)) {
-      text = new TextDecoder().decode(payload);
-    } else if (typeof payload === 'object' && payload !== null && 'data' in payload) {
-      return processStdout((payload as Record<string, unknown>).data);
-    } else {
-      text = String(payload);
-    }
+  // Robust payload decoding (mirrors the sample's decodePayload)
+  const decodePayload = useCallback((payload: unknown): string => {
+    if (payload === null || payload === undefined) return '';
+    if (typeof payload === 'string') return payload;
+    if (payload instanceof ArrayBuffer) return new TextDecoder().decode(payload);
+    if (ArrayBuffer.isView(payload)) return new TextDecoder().decode(payload);
+    return String(payload);
+  }, []);
 
+  const processStdout = useCallback((text: string) => {
     if (!text) return;
 
     // Handle concatenated info blocks like the sample: split before each "info " token
@@ -134,15 +127,12 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         setIsAnalyzing(false);
       });
 
-      socket.on('stdout', processStdout);
+      socket.on('stdout', (payload: unknown) => {
+        processStdout(decodePayload(payload));
+      });
 
       socket.on('stderr', (payload: unknown) => {
-        let text = '';
-        if (payload === null || payload === undefined) return;
-        if (typeof payload === 'string') text = payload;
-        else if (payload instanceof ArrayBuffer) text = new TextDecoder().decode(payload);
-        else if (ArrayBuffer.isView(payload)) text = new TextDecoder().decode(payload);
-        else text = String(payload);
+        const text = decodePayload(payload);
         if (text) {
           setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
         }
@@ -167,7 +157,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       setError(err instanceof Error ? err.message : '连接异常');
       setIsConnecting(false);
     }
-  }, [processStdout]);
+  }, [processStdout, decodePayload]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
