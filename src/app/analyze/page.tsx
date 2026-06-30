@@ -116,12 +116,22 @@ export default function AnalyzePage() {
     syncAndAnalyze,
   } = useZhiziAnalysis();
 
-  // Sync winrate to game state when it changes
+  // Sync winrate to game state only when the value actually changes.
+  // NOTE: do NOT include setCurrentWinrate in the dependency array because its
+  // reference changes every time moveTree is updated, creating a render loop.
+  const lastWinrateRef = useRef<number | null>(null);
   useEffect(() => {
-    if (currentWinrate !== null && currentWinrate >= 0 && currentWinrate <= 1) {
+    if (
+      currentWinrate !== null &&
+      currentWinrate >= 0 &&
+      currentWinrate <= 1 &&
+      currentWinrate !== lastWinrateRef.current
+    ) {
+      lastWinrateRef.current = currentWinrate;
       setCurrentWinrate(currentWinrate);
     }
-  }, [currentWinrate, setCurrentWinrate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWinrate]);
 
   // Sync and analyze whenever moves change and AI is connected
   const prevMoveCountRef = useRef(-1);

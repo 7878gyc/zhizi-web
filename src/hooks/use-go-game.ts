@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type { GoStone, MoveNode } from '@/lib/go-types';
 import { coordToGTP, findNode, getPathToNode, generateNodeId, createRootNode } from '@/lib/go-types';
 
@@ -354,33 +354,48 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
     [navigateToNode]
   );
 
+  // Stable refs so setCurrentWinrate never changes reference
+  const moveTreeRef = useRef(moveTree);
+  moveTreeRef.current = moveTree;
+  const currentNodeIdRef = useRef(currentNodeId);
+  currentNodeIdRef.current = currentNodeId;
+
   const setCurrentWinrate = useCallback(
     (winrate: number) => {
-      // Update winrate on the current node
+      const tree = moveTreeRef.current;
+      const nodeId = currentNodeIdRef.current;
+
       const updateWinrate = (node: MoveNode): MoveNode => {
-        if (node.id === currentNodeId) {
+        if (node.id === nodeId) {
           return { ...node, winrate };
         }
         return { ...node, children: node.children.map(updateWinrate) };
       };
-      const newTree = updateWinrate(moveTree);
+      const newTree = updateWinrate(tree);
+
+      // Skip update if nothing changed (prevents unnecessary re-renders)
+      if (newTree === tree) return;
+
       setMoveTree(newTree);
 
-      // Also update winrate history
       setWinrateHistory(prev => {
         const next = [...prev];
         next[next.length - 1] = winrate;
         return next;
       });
     },
-    [moveTree, currentNodeId]
+    [] // stable!
   );
 
-  // Build GTP moves array from current path
-  const currentPath = getPathToNode(moveTree, currentNodeId);
-  const gtpMoves = currentPath
-    .filter(n => n.move !== 'root' && n.color)
-    .map(m => `${m.color === 'black' ? 'B' : 'W'} ${m.move}`);
+  // Build GTP moves array from current path (stable reference via useMemo)
+  const currentPath = useMemo(() => getPathToNode(moveTree, currentNodeId), [moveTree, currentNodeId]);
+  const gtpMoves = useMemo(
+    () =>
+      currentPath
+        .filter(n => n.move !== 'root' && n.color)
+        .map(m => `${m.color === 'black' ? 'B' : 'W'} ${m.move}`),
+    [currentPath]
+  );
 
   const totalMoves = gtpMoves.length;
   const currentMoveNumber = currentPath.length - 1; // 0-based (root=0)
