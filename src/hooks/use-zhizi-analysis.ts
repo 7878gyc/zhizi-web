@@ -44,31 +44,34 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
 
   // Robust payload decoding (mirrors the sample's decodePayload)
   const decodePayload = useCallback((payload: unknown): string => {
-    if (payload === null || payload === undefined) return '';
-    if (typeof payload === 'string') return payload;
-    if (payload instanceof ArrayBuffer) return new TextDecoder().decode(payload);
-    if (ArrayBuffer.isView(payload)) return new TextDecoder().decode(payload);
-    return String(payload);
+    try {
+      if (payload === null || payload === undefined) return '';
+      if (typeof payload === 'string') return payload;
+      if (payload instanceof ArrayBuffer) return new TextDecoder().decode(payload);
+      if (ArrayBuffer.isView(payload)) return new TextDecoder().decode(payload);
+      return String(payload);
+    } catch {
+      return '';
+    }
   }, []);
 
   const processStdout = useCallback((text: string) => {
-    if (!text) return;
+    try {
+      if (!text) return;
 
-    // Handle concatenated info blocks like the sample: split before each "info " token
-    const candidates = parseInfoLine(text);
+      const candidates = parseInfoLine(text);
+      if (candidates.length === 0) return;
 
-    if (candidates.length === 0) return;
+      candidates.sort((a: AnalysisInfo, b: AnalysisInfo) => (a.order || 0) - (b.order || 0));
 
-    // Sort by order (missing order = 0, same as the sample)
-    candidates.sort((a: AnalysisInfo, b: AnalysisInfo) => (a.order || 0) - (b.order || 0));
+      setAnalysisData(candidates);
 
-    // Replace old analysis data with the new batch
-    setAnalysisData(candidates);
-
-    // Update winrate from the best candidate (lowest order, typically order 0)
-    const best = candidates[0];
-    if (best && best.winrate !== undefined) {
-      setCurrentWinrate(best.winrate);
+      const best = candidates[0];
+      if (best && best.winrate !== undefined) {
+        setCurrentWinrate(best.winrate);
+      }
+    } catch (e) {
+      console.error('processStdout error:', e);
     }
   }, []);
 
@@ -128,13 +131,21 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       });
 
       socket.on('stdout', (payload: unknown) => {
-        processStdout(decodePayload(payload));
+        try {
+          processStdout(decodePayload(payload));
+        } catch (e) {
+          console.error('stdout handler error:', e);
+        }
       });
 
       socket.on('stderr', (payload: unknown) => {
-        const text = decodePayload(payload);
-        if (text) {
-          setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
+        try {
+          const text = decodePayload(payload);
+          if (text) {
+            setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
+          }
+        } catch (e) {
+          console.error('stderr handler error:', e);
         }
       });
 
