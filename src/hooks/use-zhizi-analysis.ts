@@ -42,7 +42,25 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  const processStdout = useCallback((text: string) => {
+  const processStdout = useCallback((payload: unknown) => {
+    // Robust decode similar to the sample code
+    let text = '';
+    if (payload === null || payload === undefined) {
+      text = '';
+    } else if (typeof payload === 'string') {
+      text = payload;
+    } else if (payload instanceof ArrayBuffer) {
+      text = new TextDecoder().decode(payload);
+    } else if (ArrayBuffer.isView(payload)) {
+      text = new TextDecoder().decode(payload);
+    } else if (typeof payload === 'object' && payload !== null && 'data' in payload) {
+      return processStdout((payload as Record<string, unknown>).data);
+    } else {
+      text = String(payload);
+    }
+
+    if (!text) return;
+
     // Handle concatenated info blocks like the sample: split before each "info " token
     const candidates = parseInfoLine(text);
 
@@ -55,7 +73,6 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     setAnalysisData(candidates);
 
     // Update winrate from the best candidate (lowest order, typically order 0)
-    // Fall back to the first candidate if no order field is present
     const best = candidates[0];
     if (best && best.winrate !== undefined) {
       setCurrentWinrate(best.winrate);
@@ -117,18 +134,18 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         setIsAnalyzing(false);
       });
 
-      socket.on('stdout', (payload: ArrayBuffer | string) => {
-        const text = typeof payload === 'string'
-          ? payload
-          : new TextDecoder().decode(payload);
-        processStdout(text);
-      });
+      socket.on('stdout', processStdout);
 
-      socket.on('stderr', (payload: ArrayBuffer | string) => {
-        const text = typeof payload === 'string'
-          ? payload
-          : new TextDecoder().decode(payload);
-        setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
+      socket.on('stderr', (payload: unknown) => {
+        let text = '';
+        if (payload === null || payload === undefined) return;
+        if (typeof payload === 'string') text = payload;
+        else if (payload instanceof ArrayBuffer) text = new TextDecoder().decode(payload);
+        else if (ArrayBuffer.isView(payload)) text = new TextDecoder().decode(payload);
+        else text = String(payload);
+        if (text) {
+          setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${text}`]);
+        }
       });
 
       socket.on('disconnect', (reason) => {

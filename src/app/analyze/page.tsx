@@ -124,7 +124,7 @@ export default function AnalyzePage() {
   }, [currentWinrate, setCurrentWinrate]);
 
   // Sync and analyze whenever moves change and AI is connected
-  const prevMoveCountRef = useRef(0);
+  const prevMoveCountRef = useRef(-1);
   useEffect(() => {
     if (isConnected && gtpMoves.length !== prevMoveCountRef.current) {
       prevMoveCountRef.current = gtpMoves.length;
