@@ -365,22 +365,29 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
       const tree = moveTreeRef.current;
       const nodeId = currentNodeIdRef.current;
 
+      const currentNode = findNode(tree, nodeId);
+
+      // Convert to Black's perspective: engine reports winrate from the
+      // CURRENT player's view. If Black just moved (color='black'),
+      // current player is White → flip to 1 - winrate.
+      const blackWinrate = currentNode?.color === 'black' ? 1 - winrate : winrate;
+
+      // Skip if the same value is already stored
+      if (currentNode?.winrate === blackWinrate) return;
+
       const updateWinrate = (node: MoveNode): MoveNode => {
         if (node.id === nodeId) {
-          return { ...node, winrate };
+          return { ...node, winrate: blackWinrate };
         }
         return { ...node, children: node.children.map(updateWinrate) };
       };
       const newTree = updateWinrate(tree);
 
-      // Skip update if nothing changed (prevents unnecessary re-renders)
-      if (newTree === tree) return;
-
       setMoveTree(newTree);
 
       setWinrateHistory(prev => {
         const next = [...prev];
-        next[next.length - 1] = winrate;
+        next[next.length - 1] = blackWinrate;
         return next;
       });
     },
