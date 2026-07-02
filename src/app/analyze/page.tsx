@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -326,6 +327,57 @@ export default function AnalyzePage() {
   })();
   const canGoNext = currentNode !== null && currentNode.children.length > 0;
 
+  const goToFirstMove = useCallback(() => {
+    const rootChildren = moveTree.children;
+    if (rootChildren.length > 0) {
+      jumpToNode(rootChildren[0].id);
+    } else {
+      jumpToNode('root');
+    }
+  }, [moveTree, jumpToNode]);
+
+  const goToLastMove = useCallback(() => {
+    let node = moveTree;
+    while (node.children.length > 0) {
+      node = node.children[0];
+    }
+    jumpToNode(node.id);
+  }, [moveTree, jumpToNode]);
+
+  const goBackward5 = useCallback(() => {
+    let nodeId = currentNodeId;
+    for (let i = 0; i < 5 && nodeId !== 'root'; i++) {
+      const node = (function find(tree: typeof moveTree): typeof moveTree | null {
+        if (tree.id === nodeId) return tree;
+        for (const child of tree.children) {
+          const found = find(child);
+          if (found) return found;
+        }
+        return null;
+      })(moveTree);
+      if (!node?.parentId) break;
+      nodeId = node.parentId;
+    }
+    jumpToNode(nodeId);
+  }, [moveTree, currentNodeId, jumpToNode]);
+
+  const goForward5 = useCallback(() => {
+    let nodeId = currentNodeId;
+    for (let i = 0; i < 5; i++) {
+      const node = (function find(tree: typeof moveTree): typeof moveTree | null {
+        if (tree.id === nodeId) return tree;
+        for (const child of tree.children) {
+          const found = find(child);
+          if (found) return found;
+        }
+        return null;
+      })(moveTree);
+      if (!node || node.children.length === 0) break;
+      nodeId = node.children[0].id;
+    }
+    jumpToNode(nodeId);
+  }, [moveTree, currentNodeId, jumpToNode]);
+
   // Display name for user
   const userDisplayName = userInfo
     ? (userInfo.phone || userInfo.email || userInfo.username || '用户')
@@ -427,20 +479,54 @@ export default function AnalyzePage() {
           />
 
           {/* Board controls */}
-          <div className="flex items-center gap-2 mt-3">
+          <div className="flex items-center gap-1.5 mt-3">
+            <button
+              onClick={goToFirstMove}
+              disabled={!canGoPrev}
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="第一手"
+            >
+              <SkipBack className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goBackward5}
+              disabled={!canGoPrev}
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="后退5步"
+            >
+              <Rewind className="w-4 h-4" />
+            </button>
             <button
               onClick={goToPrevMove}
               disabled={!canGoPrev}
-              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="上一步"
             >
-              上一步
+              <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={goToNextMove}
               disabled={!canGoNext}
-              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="下一步"
             >
-              下一步
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goForward5}
+              disabled={!canGoNext}
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="前进5步"
+            >
+              <FastForward className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goToLastMove}
+              disabled={!canGoNext}
+              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+              title="最后一手"
+            >
+              <SkipForward className="w-4 h-4" />
             </button>
             <span className="text-[#4A4A6A] text-xs mx-1">|</span>
             {/* Board size */}
