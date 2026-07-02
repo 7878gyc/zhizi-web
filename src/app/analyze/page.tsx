@@ -149,28 +149,15 @@ export default function AnalyzePage() {
     }
   }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
+  // Stable refs for callbacks used inside setInterval
+  const goToNextMoveRef = useRef(goToNextMove);
+  goToNextMoveRef.current = goToNextMove;
+
   // Auto analyze: every 2 seconds go to next move
   useEffect(() => {
     if (isAutoAnalyzing && isConnected) {
       autoAnalyzeRef.current = setInterval(() => {
-        const currentNode = (() => {
-          const findInTree = (node: typeof moveTree): typeof moveTree | null => {
-            if (node.id === currentNodeId) return node;
-            for (const child of node.children) {
-              const found = findInTree(child);
-              if (found) return found;
-            }
-            return null;
-          };
-          return findInTree(moveTree);
-        })();
-
-        if (currentNode && currentNode.children.length > 0) {
-          goToNextMove();
-        } else {
-          // Reached leaf, stop auto-analyze
-          setIsAutoAnalyzing(false);
-        }
+        goToNextMoveRef.current();
       }, 2000);
     } else {
       if (autoAnalyzeRef.current) {
@@ -183,7 +170,7 @@ export default function AnalyzePage() {
         clearInterval(autoAnalyzeRef.current);
       }
     };
-  }, [isAutoAnalyzing, isConnected, moveTree, currentNodeId, goToNextMove]);
+  }, [isAutoAnalyzing, isConnected]);
 
   // Start analysis (manual)
   const handleStartAnalysis = useCallback(() => {
@@ -326,6 +313,13 @@ export default function AnalyzePage() {
     return findInTree(moveTree);
   })();
   const canGoNext = currentNode !== null && currentNode.children.length > 0;
+
+  // Stop auto-analyze when reaching a leaf node (no children)
+  useEffect(() => {
+    if (isAutoAnalyzing && !canGoNext) {
+      setIsAutoAnalyzing(false);
+    }
+  }, [isAutoAnalyzing, canGoNext]);
 
   const goToFirstMove = useCallback(() => {
     const rootChildren = moveTree.children;
