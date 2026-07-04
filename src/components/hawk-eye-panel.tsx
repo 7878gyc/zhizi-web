@@ -199,13 +199,20 @@ export default function HawkEyePanel({
           <ColorStats results={results} color="white" colorClass="bg-[#F5F5F5] border border-[#6B6B80]" />
 
           <div className="max-h-[300px] overflow-y-auto space-y-0.5 scrollbar-thin">
-            {results.map((r, idx) => {
-              if (!r.actualMove) return null;
-              return (
+            {(() => {
+              const problems = results.filter(r => r.actualMove && r.isProblem);
+              if (problems.length === 0) {
+                return (
+                  <div className="text-[10px] text-[#4A4A6A] text-center py-2">
+                    无问题手
+                  </div>
+                );
+              }
+              return problems.map((r, idx) => (
                 <div
                   key={idx}
                   className="flex items-center gap-2 px-2 py-1 rounded text-xs"
-                  style={r.isProblem && SEVERITY_BG[r.problemSeverity] ? { backgroundColor: SEVERITY_BG[r.problemSeverity] } : undefined}
+                  style={{ backgroundColor: SEVERITY_BG[r.problemSeverity] }}
                 >
                   <span className="w-6 font-mono text-[#8B8FA3] text-right shrink-0">
                     {r.moveNumber}
@@ -218,15 +225,6 @@ export default function HawkEyePanel({
                   <span className="w-8 font-mono font-semibold shrink-0">
                     {r.actualMove}
                   </span>
-                  {r.winrate == null ? (
-                    <span className="text-[#4A4A6A] text-[10px] shrink-0">--</span>
-                  ) : r.isMatch ? (
-                    <span className="text-[#4ADE80] shrink-0" title={r.isBest ? 'AI首选' : `AI第${r.matchRank}选`}>
-                      {r.isBest ? '\u2605' : '\u2713'}
-                    </span>
-                  ) : (
-                    <span className="text-[#FF6B6B] shrink-0">{'\u2717'}</span>
-                  )}
                   {r.aiBestMove && !r.isMatch && (
                     <span className="text-[#4A4A6A] font-mono text-[10px]">
                       {'\u2192'}{r.aiBestMove}
@@ -242,17 +240,15 @@ export default function HawkEyePanel({
                       {(r.winrateDrop * 100).toFixed(1)}%
                     </span>
                   )}
-                  {r.isProblem && SEVERITY_LABELS[r.problemSeverity] && (
-                    <span
-                      className="text-[10px] font-medium shrink-0"
-                      style={{ color: SEVERITY_COLORS[r.problemSeverity] }}
-                    >
-                      {SEVERITY_LABELS[r.problemSeverity]}
-                    </span>
-                  )}
+                  <span
+                    className="text-[10px] font-medium shrink-0"
+                    style={{ color: SEVERITY_COLORS[r.problemSeverity] }}
+                  >
+                    {SEVERITY_LABELS[r.problemSeverity]}
+                  </span>
                 </div>
-              );
-            })}
+              ));
+            })()}
           </div>
         </>
       ) : (

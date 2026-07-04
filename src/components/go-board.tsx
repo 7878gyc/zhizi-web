@@ -158,57 +158,58 @@ export default function GoBoard({
       ctx.fillText(String(boardSize - i), padding * 0.35, ly);
     }
 
-    // Analysis move suggestions - max 5, color-coded by rank & prior
+    // LizzieYZY-style: visit-based red→green gradient, best=cyan
     if (analysisData.length > 0) {
-      const topMoves = analysisData.slice(0, 5);
-      // Color rules: 1st=yellow, 2nd=blue, 3rd=green, 4th-5th or prior<0.3=red
-      const SUGGESTION_COLORS = [
-        { r: 232, g: 185, b: 49 },   // #E8B931 yellow - 1st
-        { r: 74, g: 158, b: 255 },    // #4A9EFF blue - 2nd
-        { r: 74, g: 222, b: 128 },    // #4ADE80 green - 3rd
-        { r: 255, g: 107, b: 107 },   // #FF6B6B red - 4th
-        { r: 255, g: 107, b: 107 },   // #FF6B6B red - 5th
-      ];
+      const topMoves = analysisData.slice(0, 10);
+      const maxVisits = topMoves.reduce((mx, m) => Math.max(mx, m.visits), 0) || 1;
+      const MIN_ALPHA = 0.125;
+      const MAX_ALPHA = 0.94;
+      const ALPHA_FACTOR = 5.0;
+      const COLOR_RATIO = 2;
 
-      for (let idx = 0; idx < topMoves.length; idx++) {
-        const info = topMoves[idx];
+      for (const info of topMoves) {
         try {
           const { row, col } = gtpToCoord(info.move, boardSize);
           if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) continue;
           if (board[row][col] !== null) continue;
           const { x, y } = getCellPos(row, col);
 
-          // Color: if prior < 0.3 (30%), override to red regardless of rank
-          const isLowPrior = (info.prior ?? 0) < 0.3;
-          const colorIdx = isLowPrior ? 3 : idx;
-          const clr = SUGGESTION_COLORS[Math.min(colorIdx, SUGGESTION_COLORS.length - 1)];
-          const alpha = Math.max(0.5, Math.min(0.9, (info.prior ?? 0.1) * 3 + 0.3));
+          const fraction = info.visits / maxVisits;
+          const warped = Math.pow(fraction, 1 / COLOR_RATIO);
 
-          // Draw suggestion circle — same size as a stone
-          ctx.fillStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, ${alpha})`;
+          // Hue: best move = cyan (180deg), others red→green (0→120deg)
+          const hue = info.order === 0 ? 180 : (warped * 120);
+          const sat = 74;
+          const lit = 42.5;
+
+          // Logarithmic alpha from visits ratio
+          const logRatio = fraction > 0 ? Math.log(fraction) / ALPHA_FACTOR + 1 : 0;
+          const alphaRatio = Math.max(0, Math.min(1, logRatio));
+          const alpha = MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * alphaRatio;
+
+          ctx.fillStyle = `hsla(${hue}, ${sat}%, ${lit}%, ${alpha})`;
           ctx.beginPath();
           ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
           ctx.fill();
 
-          // Border for all suggestions
-          ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, ${alpha + 0.1})`;
-          ctx.lineWidth = idx === 0 ? 2 : 1.5;
+          // Border
+          ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${lit}%, ${Math.min(1, alpha + 0.1)})`;
+          ctx.lineWidth = info.order === 0 ? 2.5 : 1.5;
           ctx.beginPath();
           ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
           ctx.stroke();
 
-          // Pulsing outer ring for top suggestion
-          if (idx === 0) {
-            ctx.strokeStyle = `rgba(${clr.r}, ${clr.g}, ${clr.b}, 0.4)`;
-            ctx.lineWidth = 1.5;
+          // Blue ring for best move
+          if (info.order === 0) {
+            ctx.strokeStyle = 'rgba(0, 0, 255, 0.7)';
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(x, y, stoneRadius + 3, 0, Math.PI * 2);
             ctx.stroke();
           }
 
-          // Winrate text (top line)
+          // Winrate text
           const winrateText = `${Math.round(info.winrate * 100)}%`;
-          // Score text (bottom line)
           const scoreText = info.scoreMean !== undefined
             ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
             : '';
@@ -217,18 +218,13 @@ export default function GoBoard({
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
+          const fontSize = Math.max(9, stoneRadius * 0.55);
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.fillText(winrateText, x, y - fontSize * 0.4);
+
           if (scoreText) {
-            // Two lines: winrate on top, score on bottom
-            const fontSize = Math.max(9, stoneRadius * 0.55);
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            ctx.fillText(winrateText, x, y - fontSize * 0.4);
             ctx.font = `${fontSize * 0.85}px sans-serif`;
             ctx.fillText(scoreText, x, y + fontSize * 0.5);
-          } else {
-            // Single line: just winrate
-            const fontSize = Math.max(10, stoneRadius * 0.6);
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            ctx.fillText(winrateText, x, y);
           }
         } catch {
           // Skip invalid coordinates
