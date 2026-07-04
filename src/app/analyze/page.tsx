@@ -118,9 +118,26 @@ export default function AnalyzePage() {
     syncAndAnalyze,
   } = useZhiziAnalysis();
 
+  // Analysis cache: persist variations per position so switching back shows them instantly
+  const analysisCacheRef = useRef<Map<number, { data: AnalysisInfo[]; winrate: number | null }>>(new Map());
+  const [displayAnalysis, setDisplayAnalysis] = useState<AnalysisInfo[]>([]);
+  const [displayWinrate, setDisplayWinrate] = useState<number | null>(null);
+  const analysisDataRef = useRef(analysisData);
+  analysisDataRef.current = analysisData;
+  const currentWinrateRef = useRef(currentWinrate);
+  currentWinrateRef.current = currentWinrate;
+
+  // Cache live analysis data whenever it arrives
+  useEffect(() => {
+    if (analysisData.length > 0) {
+      const idx = gtpMoves.length;
+      analysisCacheRef.current.set(idx, { data: analysisData, winrate: currentWinrate });
+      setDisplayAnalysis(analysisData);
+      setDisplayWinrate(currentWinrate);
+    }
+  }, [analysisData, currentWinrate, gtpMoves.length]);
+
   // Sync winrate to game state only when the value actually changes.
-  // NOTE: do NOT include setCurrentWinrate in the dependency array because its
-  // reference changes every time moveTree is updated, creating a render loop.
   const lastWinrateRef = useRef<number | null>(null);
   useEffect(() => {
     if (
@@ -138,16 +155,39 @@ export default function AnalyzePage() {
   // Sync and analyze whenever moves change and AI is connected
   const prevMoveCountRef = useRef(-1);
   useEffect(() => {
-    if (isConnected && gtpMoves.length !== prevMoveCountRef.current) {
-      prevMoveCountRef.current = gtpMoves.length;
-      syncAndAnalyze({
-        boardSize,
-        komi,
-        rules,
-        player: currentPlayer,
-        moves: gtpMoves,
+    if (!isConnected) {
+      prevMoveCountRef.current = -1;
+      return;
+    }
+    if (gtpMoves.length === prevMoveCountRef.current) return;
+
+    const oldIdx = prevMoveCountRef.current;
+
+    // Save current live data to cache for the position we're leaving
+    if (oldIdx >= 0 && analysisDataRef.current.length > 0) {
+      analysisCacheRef.current.set(oldIdx, {
+        data: analysisDataRef.current,
+        winrate: currentWinrateRef.current,
       });
     }
+
+    prevMoveCountRef.current = gtpMoves.length;
+
+    // Load cached data for new position instantly
+    const newIdx = gtpMoves.length;
+    const cached = analysisCacheRef.current.get(newIdx);
+    if (cached && cached.data.length > 0) {
+      setDisplayAnalysis(cached.data);
+      setDisplayWinrate(cached.winrate);
+    }
+
+    syncAndAnalyze({
+      boardSize,
+      komi,
+      rules,
+      player: currentPlayer,
+      moves: gtpMoves,
+    });
   }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
   // Stable refs for callbacks used inside setInterval
@@ -465,7 +505,7 @@ export default function AnalyzePage() {
             boardSize={boardSize}
             board={board}
             currentPlayer={currentPlayer}
-            analysisData={analysisData}
+            analysisData={displayAnalysis}
             onCellClick={handleCellClick}
             lastMove={lastMove}
             hoverCoord={hoverCoord}
@@ -549,6 +589,9 @@ export default function AnalyzePage() {
                 disconnect();
                 resetBoard();
                 setVariationMoves(null);
+                analysisCacheRef.current.clear();
+                setDisplayAnalysis([]);
+                setDisplayWinrate(null);
               }}
               className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
             >
@@ -626,8 +669,8 @@ export default function AnalyzePage() {
 
           {/* Analysis panel (winrate bar + suggestion table) */}
           <AnalysisPanel
-            analysisData={analysisData}
-            currentWinrate={currentWinrate}
+            analysisData={displayAnalysis}
+            currentWinrate={displayWinrate}
             currentPlayer={currentPlayer}
             isAnalyzing={isAnalyzing}
             speed={analysisData.length > 0 ? analysisData[0].speed : undefined}
@@ -636,8 +679,8 @@ export default function AnalyzePage() {
 
           {/* Hawk-Eye analysis panel */}
           <HawkEyePanel
-            analysisData={analysisData}
-            currentWinrate={currentWinrate}
+            analysisData={displayAnalysis}
+            currentWinrate={displayWinrate}
             gtpMoves={gtpMoves}
             isConnected={isConnected}
           />
