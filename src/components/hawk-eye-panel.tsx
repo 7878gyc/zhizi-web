@@ -195,8 +195,8 @@ export default function HawkEyePanel({
 
       {analyzedTotal > 0 ? (
         <>
-          <ColorStats results={results} color="black" colorClass="bg-white border border-[#4A4A6A]" />
-          <ColorStats results={results} color="white" colorClass="bg-[#E0E0E0]" />
+          <ColorStats results={results} color="black" colorClass="bg-[#18181B] border border-[#4A4A6A]" />
+          <ColorStats results={results} color="white" colorClass="bg-[#F5F5F5] border border-[#6B6B80]" />
 
           <div className="max-h-[300px] overflow-y-auto space-y-0.5 scrollbar-thin">
             {results.map((r, idx) => {
@@ -212,7 +212,7 @@ export default function HawkEyePanel({
                   </span>
                   <span
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      r.moveColor === 'black' ? 'bg-white border border-[#4A4A6A]' : 'bg-[#E0E0E0]'
+                      r.moveColor === 'black' ? 'bg-[#18181B] border border-[#5A5A6A]' : 'bg-[#F5F5F5] border border-[#6B6B80]'
                     }`}
                   />
                   <span className="w-8 font-mono font-semibold shrink-0">
@@ -225,7 +225,7 @@ export default function HawkEyePanel({
                       {r.isBest ? '\u2605' : '\u2713'}
                     </span>
                   ) : (
-                    <span className="text-[#FF6B6B] shrink-0">\u2717</span>
+                    <span className="text-[#FF6B6B] shrink-0">{'\u2717'}</span>
                   )}
                   {r.aiBestMove && !r.isMatch && (
                     <span className="text-[#4A4A6A] font-mono text-[10px]">
