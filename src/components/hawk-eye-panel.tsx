@@ -151,21 +151,30 @@ export default function HawkEyePanel({
   const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
   const [version, setVersion] = useState(0);
 
-  useEffect(() => {
-    if (!isConnected || analysisData.length === 0) return;
+  const analysisDataRef = useRef(analysisData);
+  analysisDataRef.current = analysisData;
+  const winrateRef = useRef(currentWinrate);
+  winrateRef.current = currentWinrate;
+  const movesRef = useRef(gtpMoves);
+  movesRef.current = gtpMoves;
 
-    const posIdx = gtpMoves.length;
+  useEffect(() => {
+    if (!isConnected) return;
+
     const timer = setInterval(() => {
+      const moves = movesRef.current;
+      const posIdx = moves.length;
+      if (analysisDataRef.current.length === 0) return;
       const record: HawkEyeRecord = {
-        candidates: analysisData,
-        winrate: currentWinrate ?? 0,
+        candidates: analysisDataRef.current,
+        winrate: winrateRef.current ?? 0,
       };
       historyRef.current.set(posIdx, record);
       setVersion(v => v + 1);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isConnected, analysisData, currentWinrate, gtpMoves.length]);
+  }, [isConnected]);
 
   const results = useMemo(
     () => computeResults(historyRef.current, gtpMoves),
