@@ -639,7 +639,7 @@ export default function AnalyzePage() {
             analysisData={analysisData}
             currentWinrate={currentWinrate}
             gtpMoves={gtpMoves}
-            currentPlayer={currentPlayer}
+            isConnected={isConnected}
           />
         </div>
       </div>
