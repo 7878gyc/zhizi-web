@@ -9,6 +9,7 @@ import AnalysisPanel from '@/components/analysis-panel';
 import MoveTree from '@/components/move-tree';
 import WinrateChart from '@/components/winrate-chart';
 import KataGoLogViewer from '@/components/katago-log-viewer';
+import HawkEyePanel from '@/components/hawk-eye-panel';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
@@ -115,6 +116,11 @@ export default function AnalyzePage() {
     connect,
     disconnect,
     syncAndAnalyze,
+    isBatchAnalyzing,
+    batchProgress,
+    batchResults,
+    startBatchAnalysis,
+    stopBatchAnalysis,
   } = useZhiziAnalysis();
 
   // Sync winrate to game state only when the value actually changes.
@@ -189,6 +195,20 @@ export default function AnalyzePage() {
   const handleToggleAutoAnalyze = useCallback(() => {
     setIsAutoAnalyzing(prev => !prev);
   }, []);
+
+  // Hawk-eye batch analysis
+  const handleStartHawkEye = useCallback(async () => {
+    stopBatchAnalysis();
+    await startBatchAnalysis({
+      boardSize,
+      komi,
+      rules,
+      player: currentPlayer,
+      moves: gtpMoves,
+    });
+    // Force re-sync after batch completes (engine state has moved)
+    prevMoveCountRef.current = -1;
+  }, [boardSize, komi, rules, currentPlayer, gtpMoves, startBatchAnalysis, stopBatchAnalysis]);
 
   const handleCellClick = useCallback(
     (row: number, col: number) => {
@@ -631,6 +651,16 @@ export default function AnalyzePage() {
             isAnalyzing={isAnalyzing}
             speed={analysisData.length > 0 ? analysisData[0].speed : undefined}
             onSelectMove={handleSelectMove}
+          />
+
+          {/* Hawk-Eye analysis panel */}
+          <HawkEyePanel
+            results={batchResults}
+            isRunning={isBatchAnalyzing}
+            progress={batchProgress}
+            onStart={handleStartHawkEye}
+            onStop={stopBatchAnalysis}
+            isConnected={isConnected}
           />
         </div>
       </div>
