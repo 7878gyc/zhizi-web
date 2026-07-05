@@ -16,6 +16,7 @@ interface UseGoGameReturn {
   gtpMoves: string[];
   totalMoves: number;          // total moves in current path
   currentMoveNumber: number;   // 0-based move number of current node
+  currentPath: MoveNode[];
   winrateHistory: (number | null)[];  // winrate per move along current path
   placeStone: (row: number, col: number) => boolean;
   goToPrevMove: () => void;
@@ -419,6 +420,7 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
     gtpMoves,
     totalMoves,
     currentMoveNumber,
+    currentPath,
     winrateHistory,
     placeStone,
     goToPrevMove,

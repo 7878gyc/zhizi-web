@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -16,6 +16,7 @@ import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
 import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
 import { gtpToCoord } from '@/lib/go-types';
 import { readSgfFile } from '@/lib/sgf-parser';
+import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
 
 interface VariationMove {
   row: number;
@@ -90,6 +91,7 @@ export default function AnalyzePage() {
     lastMove,
     gtpMoves,
     currentMoveNumber,
+    currentPath,
     winrateHistory,
     placeStone,
     goToPrevMove,
@@ -340,6 +342,43 @@ export default function AnalyzePage() {
     }
     setVariationMoves(moves.length > 0 ? moves : null);
   }, [currentPlayer, boardSize]);
+
+  // SGF save
+  const [showSgfMenu, setShowSgfMenu] = useState(false);
+  const sgfMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showSgfMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (sgfMenuRef.current && !sgfMenuRef.current.contains(e.target as Node)) {
+        setShowSgfMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSgfMenu]);
+
+  const handleSaveSgf = useCallback((includeAnalysis: boolean) => {
+    setShowSgfMenu(false);
+    try {
+      const options = {
+        boardSize,
+        komi,
+        rules,
+        moveTree,
+        currentPath: currentPath.map(n => n.id),
+        analysisCache: includeAnalysis ? analysisCacheRef.current : undefined,
+        includeAnalysis,
+      };
+      const content = includeAnalysis ? generateAnalyzedSGF(options) : generatePureSGF(options);
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const suffix = includeAnalysis ? '_analyzed' : '';
+      downloadSgfFile(content, `game_${timestamp}${suffix}.sgf`);
+    } catch (err) {
+      console.error('SGF save error:', err);
+      alert('保存 SGF 失败');
+    }
+  }, [boardSize, komi, rules, moveTree, currentPath]);
 
   const canGoPrev = currentNodeId !== 'root';
   const currentNode = (() => {
@@ -651,6 +690,33 @@ export default function AnalyzePage() {
             onToggleAutoAnalyze={handleToggleAutoAnalyze}
             error={analysisError}
           />
+
+          {/* Save SGF */}
+          <div className="relative" ref={sgfMenuRef}>
+            <button
+              onClick={() => setShowSgfMenu(!showSgfMenu)}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs bg-[#1A1A2E] hover:bg-[#2A3A5C] text-[#C8CAD0] border border-[#2A3A5C]/30 rounded transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              保存 SGF
+            </button>
+            {showSgfMenu && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-[#1A1A2E] border border-[#2A3A5C] rounded shadow-lg z-10 overflow-hidden">
+                <button
+                  onClick={() => handleSaveSgf(false)}
+                  className="w-full text-left px-3 py-2 text-xs text-[#C8CAD0] hover:bg-[#2A3A5C] transition-colors"
+                >
+                  纯棋谱文件
+                </button>
+                <button
+                  onClick={() => handleSaveSgf(true)}
+                  className="w-full text-left px-3 py-2 text-xs text-[#C8CAD0] hover:bg-[#2A3A5C] transition-colors border-t border-[#2A3A5C]/30"
+                >
+                  带分析的棋谱文件
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Move tree */}
           <MoveTree
