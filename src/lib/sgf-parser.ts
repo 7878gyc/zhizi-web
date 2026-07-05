@@ -1,5 +1,6 @@
-import type { MoveNode } from './go-types';
+import type { MoveNode, AnalysisInfo } from './go-types';
 import { generateNodeId } from './go-types';
+import { sgfToGtpCoord } from './sgf';
 
 interface SgfProperties {
   [key: string]: string[];
@@ -17,9 +18,10 @@ interface SgfParseResult {
   rules: string;
 }
 
+const COL_LETTERS_GTP = 'ABCDEFGHJKLMNOPQRST';
+
 /** Parse SGF text into a tree of nodes */
 export function parseSgf(text: string): SgfParseResult {
-  // Normalize: remove line breaks
   const normalized = text.replace(/\r?\n/g, '');
 
   let pos = 0;
@@ -29,7 +31,6 @@ export function parseSgf(text: string): SgfParseResult {
   }
 
   function parseProperty(): [string, string[]] | null {
-    // Property key: one or two uppercase letters
     const keyMatch = normalized.slice(pos).match(/^[A-Z]{1,2}/);
     if (!keyMatch) return null;
 
@@ -38,7 +39,7 @@ export function parseSgf(text: string): SgfParseResult {
 
     const values: string[] = [];
     while (pos < normalized.length && normalized[pos] === '[') {
-      pos++; // skip '['
+      pos++;
       let value = '';
       while (pos < normalized.length && normalized[pos] !== ']') {
         if (normalized[pos] === '\\' && pos + 1 < normalized.length) {
@@ -49,7 +50,7 @@ export function parseSgf(text: string): SgfParseResult {
         }
         pos++;
       }
-      if (pos < normalized.length) pos++; // skip ']'
+      if (pos < normalized.length) pos++;
       values.push(value);
     }
 
@@ -61,14 +62,12 @@ export function parseSgf(text: string): SgfParseResult {
 
     skipWhitespace();
 
-    // Expect ';'
     if (pos < normalized.length && normalized[pos] === ';') {
       pos++;
     }
 
     skipWhitespace();
 
-    // Parse properties until we hit ';', '(', ')' or end
     while (pos < normalized.length) {
       skipWhitespace();
       const ch = normalized[pos];
@@ -79,7 +78,6 @@ export function parseSgf(text: string): SgfParseResult {
       properties[prop[0]] = prop[1];
     }
 
-    // Parse children (branches and sequences)
     const children: SgfNode[] = [];
 
     while (pos < normalized.length) {
@@ -89,13 +87,11 @@ export function parseSgf(text: string): SgfParseResult {
       if (ch === ')') break;
 
       if (ch === '(') {
-        pos++; // skip '('
-        // Parse a branch - it may start with nodes
+        pos++;
         skipWhitespace();
         if (normalized[pos] === ';') {
           children.push(parseNode());
         }
-        // Continue parsing within this branch
         while (pos < normalized.length) {
           skipWhitespace();
           if (normalized[pos] === ')') {
@@ -123,13 +119,11 @@ export function parseSgf(text: string): SgfParseResult {
     return { properties, children };
   }
 
-  // Start parsing - find opening '('
   skipWhitespace();
   if (normalized[pos] === '(') pos++;
 
   const root = parseNode();
 
-  // Extract metadata
   let boardSize = 19;
   let komi = 6.5;
   let rules = 'chinese';
@@ -146,36 +140,106 @@ export function parseSgf(text: string): SgfParseResult {
       rules = 'japanese';
     } else if (ru.includes('aga')) {
       rules = 'aga';
-    } else {
-      rules = 'chinese';
     }
   }
 
   return { root, boardSize, komi, rules };
 }
 
-/** Convert SGF coordinate to (row, col) - SGF uses 'a'=0, 's'=18, skip 'i' */
+/** Convert SGF coordinate to (row, col) */
 function sgfCoordToRowCol(coord: string, boardSize: number): { row: number; col: number } | null {
   if (coord.length < 2) return null;
-
-  const col = coord.charCodeAt(0) - 97; // 'a' = 0
-  const row = coord.charCodeAt(1) - 97; // 'a' = 0
-
-  // In SGF, 'i' is NOT skipped. SGF uses a-s for 19x19 (all 19 letters).
-  // So column 'a'=0, 'b'=1, ..., 's'=18
-  // Row 'a'=0 (top) to 's'=18 (bottom)
-
+  const col = coord.charCodeAt(0) - 97;
+  const row = coord.charCodeAt(1) - 97;
   if (col < 0 || col >= boardSize || row < 0 || row >= boardSize) return null;
-
   return { row, col };
 }
 
-/** Convert (row, col) to GTP coordinate */
 function rowColToGTP(row: number, col: number, boardSize: number): string {
-  const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST'; // Skip 'I'
-  const letter = COL_LETTERS[col];
-  const number = boardSize - row;
-  return `${letter}${number}`;
+  return COL_LETTERS_GTP[col] + (boardSize - row);
+}
+
+type AnalysisCache = Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+
+/** Parse LZ property from SGF node */
+function parseLZProperty(
+  lz: string,
+  boardSize: number
+): { engineWinrate: number; candidates: AnalysisInfo[] } | null {
+  try {
+    const parts = lz.split('\n');
+    if (parts.length < 2) return null;
+
+    // Line 1: KataGo <winrate> <visits> <scoreMean> <scoreStdev>
+    const line1Parts = parts[0].trim().split(/\s+/);
+    if (line1Parts.length < 3) return null;
+    const engineWinrate = parseFloat(line1Parts[1]) / 100;
+
+    // Line 2: move <coord> visits <n> winrate <n> prior <n> scoreMean <n> pv ...
+    const line2 = parts.slice(1).join('\n');
+    const candidateBlocks = line2.split(' info ');
+    const candidates: AnalysisInfo[] = [];
+
+    for (let i = 0; i < candidateBlocks.length; i++) {
+      const tokens = candidateBlocks[i].trim().split(/\s+/);
+      if (tokens.length < 8 || tokens[0] !== 'move') continue;
+
+      const sgfCoord = tokens[1];
+      const gtpMove = sgfToGtpCoord(sgfCoord, boardSize);
+
+      let visits = 0;
+      let wr = 0;
+      let prior = 0;
+      let scoreMean = 0;
+      const pv: string[] = [];
+
+      let j = 2;
+      while (j < tokens.length) {
+        switch (tokens[j]) {
+          case 'visits':
+            visits = parseInt(tokens[j + 1]) || 0;
+            j += 2;
+            break;
+          case 'winrate':
+            wr = (parseInt(tokens[j + 1]) || 0) / 10000;
+            j += 2;
+            break;
+          case 'prior':
+            prior = (parseInt(tokens[j + 1]) || 0) / 10000;
+            j += 2;
+            break;
+          case 'scoreMean':
+            scoreMean = parseFloat(tokens[j + 1]) || 0;
+            j += 2;
+            break;
+          case 'pv':
+            j++;
+            while (j < tokens.length && !['visits', 'winrate', 'prior', 'scoreMean', 'pv', 'info'].includes(tokens[j])) {
+              pv.push(sgfToGtpCoord(tokens[j], boardSize));
+              j++;
+            }
+            break;
+          default:
+            j++;
+        }
+      }
+
+      candidates.push({
+        move: gtpMove,
+        winrate: wr,
+        scoreMean,
+        scoreStdev: 0,
+        visits,
+        prior,
+        order: i,
+        pv,
+      });
+    }
+
+    return { engineWinrate, candidates };
+  } catch {
+    return null;
+  }
 }
 
 /** Recursively convert SGF node tree to MoveNode tree */
@@ -184,32 +248,27 @@ function sgfNodeToMoveNode(
   parentId: string | null,
   moveNumber: number,
   boardSize: number,
-  nextColor: 'black' | 'white'
+  nextColor: 'black' | 'white',
+  analysisCache: AnalysisCache,
 ): MoveNode | null {
-  // Check for a move in this node
   const blackMove = sgfNode.properties.B?.[0];
   const whiteMove = sgfNode.properties.W?.[0];
   const moveCoord = blackMove || whiteMove;
   const color = blackMove ? 'black' : (whiteMove ? 'white' : null);
+  const isBlack = color === 'black';
 
-  // If no move in this node, but it's the root with properties, we skip it
-  // and process its children directly
   if (!moveCoord && !color) {
-    // This is a game-info node (root), process children
     if (sgfNode.children.length === 0) return null;
 
     if (sgfNode.children.length === 1) {
-      return sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor);
+      return sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor, analysisCache);
     }
 
-    // Multiple children from root - create a branch point
-    // This shouldn't normally happen from root, but handle it
-    const firstChild = sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor);
+    const firstChild = sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor, analysisCache);
     if (!firstChild) return null;
 
-    // Add other children as branches
     for (let i = 1; i < sgfNode.children.length; i++) {
-      const branch = sgfNodeToMoveNode(sgfNode.children[i], parentId, moveNumber, boardSize, nextColor);
+      const branch = sgfNodeToMoveNode(sgfNode.children[i], parentId, moveNumber, boardSize, nextColor, analysisCache);
       if (branch) {
         firstChild.children.push(branch);
       }
@@ -219,12 +278,7 @@ function sgfNodeToMoveNode(
   }
 
   if (!moveCoord || !color) return null;
-
-  // Handle pass
-  if (moveCoord === '' || moveCoord === 'tt') {
-    // Pass move - skip for now, could handle later
-    return null;
-  }
+  if (moveCoord === '' || moveCoord === 'tt') return null;
 
   const pos = sgfCoordToRowCol(moveCoord, boardSize);
   if (!pos) return null;
@@ -241,16 +295,36 @@ function sgfNodeToMoveNode(
     moveNumber,
   };
 
+  // Parse LZ property for analysis data
+  const lzValue = sgfNode.properties.LZ?.[0];
+  if (lzValue) {
+    const parsed = parseLZProperty(lzValue, boardSize);
+    if (parsed) {
+      // engineWinrate is from engine's current-player perspective
+      // For black node: engine analyzed from white's perspective → engineWinrate = white WR
+      //   → black WR = 1 - engineWinrate
+      // For white node: engine analyzed from black's perspective → engineWinrate = black WR
+      const blackWinrate = isBlack ? (1 - parsed.engineWinrate) : parsed.engineWinrate;
+      moveNode.winrate = blackWinrate;
+
+      // Store in analysis cache (with engine-perspective winrate)
+      analysisCache.set(moveNumber, {
+        data: parsed.candidates,
+        winrate: parsed.engineWinrate,
+      });
+    }
+  }
+
   const nextMoveColor = color === 'black' ? 'white' : 'black';
 
-  // Process children
   for (let i = 0; i < sgfNode.children.length; i++) {
     const child = sgfNodeToMoveNode(
       sgfNode.children[i],
       nodeId,
       moveNumber + 1,
       boardSize,
-      nextMoveColor
+      nextMoveColor,
+      analysisCache,
     );
     if (child) {
       moveNode.children.push(child);
@@ -260,12 +334,13 @@ function sgfNodeToMoveNode(
   return moveNode;
 }
 
-/** Convert parsed SGF to MoveNode tree */
+/** Convert parsed SGF to MoveNode tree, extracting analysis data */
 export function sgfToMoveTree(sgfText: string): {
   tree: MoveNode;
   boardSize: number;
   komi: number;
   rules: string;
+  analysisCache: AnalysisCache;
 } | null {
   try {
     const { root, boardSize, komi, rules } = parseSgf(sgfText);
@@ -279,46 +354,45 @@ export function sgfToMoveTree(sgfText: string): {
       moveNumber: 0,
     };
 
-    // Convert SGF nodes to MoveNode children of root
+    const analysisCache: AnalysisCache = new Map();
     const nextColor: 'black' | 'white' = 'black';
-    // Check if first move property is in root node
+
     if (root.properties.B || root.properties.W) {
-      const moveNode = sgfNodeToMoveNode(root, 'root', 1, boardSize, nextColor);
+      const moveNode = sgfNodeToMoveNode(root, 'root', 1, boardSize, nextColor, analysisCache);
       if (moveNode) {
         rootNode.children.push(moveNode);
       }
     } else {
-      // Root is game-info only, process children
       for (const child of root.children) {
-        const moveNode = sgfNodeToMoveNode(child, 'root', 1, boardSize, nextColor);
+        const moveNode = sgfNodeToMoveNode(child, 'root', 1, boardSize, nextColor, analysisCache);
         if (moveNode) {
           rootNode.children.push(moveNode);
         }
       }
     }
 
-    return { tree: rootNode, boardSize, komi, rules };
+    return { tree: rootNode, boardSize, komi, rules, analysisCache };
   } catch {
     return null;
   }
 }
 
-/** Parse SGF content string directly into a MoveNode tree */
 export function parseSgfContent(sgfText: string): {
   tree: MoveNode;
   boardSize: number;
   komi: number;
   rules: string;
+  analysisCache: AnalysisCache;
 } | null {
   return sgfToMoveTree(sgfText);
 }
 
-/** Read an SGF file and parse it */
 export async function readSgfFile(file: File): Promise<{
   tree: MoveNode;
   boardSize: number;
   komi: number;
   rules: string;
+  analysisCache: AnalysisCache;
 } | null> {
   return new Promise((resolve) => {
     const reader = new FileReader();

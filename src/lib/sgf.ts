@@ -1,10 +1,17 @@
 import type { MoveNode, AnalysisInfo } from './go-types';
 
 function gtpToSgfCoord(move: string, boardSize: number): string {
-  const col = move.charCodeAt(0) - 65; // 'A' = 65
-  const row = boardSize - parseInt(move.substring(1), 10);
-  const sgfCol = col >= 8 ? col + 1 : col; // skip 'I' (same as GTP)
-  return String.fromCharCode(97 + sgfCol) + String.fromCharCode(97 + row);
+  const code = move.charCodeAt(0);
+  const colBoard = code > 73 ? code - 66 : code - 65;
+  const rowBoard = boardSize - parseInt(move.substring(1), 10);
+  return String.fromCharCode(97 + colBoard) + String.fromCharCode(97 + rowBoard);
+}
+
+export function sgfToGtpCoord(coord: string, boardSize: number): string {
+  const colBoard = coord.charCodeAt(0) - 97;
+  const rowBoard = coord.charCodeAt(1) - 97;
+  const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
+  return COL_LETTERS[colBoard] + (boardSize - rowBoard);
 }
 
 function escapeSgfText(text: string): string {
@@ -27,11 +34,9 @@ function formatLZProperty(
   const scoreMean = sorted[0]?.scoreMean ?? 0;
   const scoreStdev = sorted[0]?.scoreStdev ?? 0;
 
-  // Line 1: engine_name winrate visits scoreMean scoreStdev
   const wr = winrate != null ? Math.round(winrate * 100) : 0;
   const line1 = `KataGo ${wr} ${formatVisits(allVisits)} ${scoreMean.toFixed(2)} ${scoreStdev.toFixed(2)}`;
 
-  // Line 2: move candidates
   const moves = sorted.map(m => {
     const coord = gtpToSgfCoord(m.move, boardSize);
     const pv = (m.pv && m.pv.length > 0)
@@ -51,9 +56,9 @@ function formatComment(
   if (winrate == null || candidates.length === 0) return '';
 
   const sorted = [...candidates].sort((a, b) => (a.order || 0) - (b.order || 0));
-  const blackWR = isBlackMove ? winrate : (1 - winrate);
+  const blackWR = isBlackMove ? (1 - winrate) : winrate;
   const wrPct = (blackWR * 100).toFixed(1);
-  const delta = winrate > 0.5 ? (winrate - 0.5) * 2 : -(0.5 - winrate) * 2;
+  const delta = blackWR > 0.5 ? (blackWR - 0.5) * 2 : -(0.5 - blackWR) * 2;
   const deltaPct = (delta * 100).toFixed(1);
   const deltaSign = delta > 0 ? '+' : '';
 
@@ -69,17 +74,25 @@ function formatComment(
   ].join('\\n');
 }
 
+function getMainBranchPath(root: MoveNode): MoveNode[] {
+  const path: MoveNode[] = [];
+  let node: MoveNode | null = root;
+  while (node) {
+    path.push(node);
+    node = node.children.length > 0 ? node.children[0] : null;
+  }
+  return path;
+}
+
 export interface SgfOptions {
   boardSize: number;
   komi: number;
   rules: string;
   moveTree: MoveNode;
-  currentPath: string[];
   analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
   includeAnalysis?: boolean;
   playerBlack?: string;
   playerWhite?: string;
-  engineName?: string;
 }
 
 export function generateSGF(options: SgfOptions): string {
@@ -88,21 +101,19 @@ export function generateSGF(options: SgfOptions): string {
     komi,
     rules,
     moveTree,
-    currentPath,
     analysisCache,
     includeAnalysis = false,
     playerBlack = 'Black',
     playerWhite = 'White',
-    engineName = 'KataGo',
   } = options;
 
-  const lines: string[] = [];
+  const mainBranch = getMainBranchPath(moveTree);
 
-  // Header
+  const lines: string[] = [];
   lines.push('(;');
-  lines.push(`GM[1]`);
-  lines.push(`FF[4]`);
-  lines.push(`CA[UTF-8]`);
+  lines.push('GM[1]');
+  lines.push('FF[4]');
+  lines.push('CA[UTF-8]');
   lines.push(`SZ[${boardSize}]`);
   lines.push(`KM[${komi.toFixed(1)}]`);
   lines.push(`RU[${rules}]`);
@@ -110,27 +121,15 @@ export function generateSGF(options: SgfOptions): string {
   lines.push(`PW[${escapeSgfText(playerWhite)}]`);
   lines.push(`DT[${new Date().toISOString().slice(0, 10).replace(/-/g, '-')}]`);
 
-  // Build node lookup from path
-  const nodeMap = new Map<string, MoveNode>();
-  function indexTree(node: MoveNode) {
-    nodeMap.set(node.id, node);
-    for (const child of node.children) indexTree(child);
-  }
-  indexTree(moveTree);
-
-  // Walk the current path and generate nodes
-  for (let i = 1; i < currentPath.length; i++) {
-    const nodeId = currentPath[i];
-    const node = nodeMap.get(nodeId);
-    if (!node || !node.move || node.move === 'root') continue;
+  for (let i = 1; i < mainBranch.length; i++) {
+    const node = mainBranch[i];
+    if (!node.move || node.move === 'root') continue;
 
     const isBlack = node.color === 'black';
     const prefix = isBlack ? 'B' : 'W';
     const coord = gtpToSgfCoord(node.move, boardSize);
-
     const nodeProps: string[] = [`${prefix}[${coord}]`];
 
-    // Add analysis data if available
     if (includeAnalysis && analysisCache) {
       const cached = analysisCache.get(i);
       if (cached && cached.data.length > 0) {
@@ -145,7 +144,6 @@ export function generateSGF(options: SgfOptions): string {
   }
 
   lines.push(')');
-
   return lines.join('');
 }
 

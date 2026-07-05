@@ -91,7 +91,6 @@ export default function AnalyzePage() {
     lastMove,
     gtpMoves,
     currentMoveNumber,
-    currentPath,
     winrateHistory,
     placeStone,
     goToPrevMove,
@@ -270,7 +269,16 @@ export default function AnalyzePage() {
       }
       setKomi(result.komi);
       setRules(result.rules);
+      analysisCacheRef.current.clear();
+      setDisplayAnalysis([]);
+      setDisplayWinrate(null);
+      // Populate analysis cache from imported SGF
+      result.analysisCache.forEach((value, key) => {
+        analysisCacheRef.current.set(key, value);
+      });
       loadFromTree(result.tree);
+      // Reset input so same file can be re-imported
+      if (sgfInputRef.current) sgfInputRef.current.value = '';
     },
     [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree]
   );
@@ -311,6 +319,12 @@ export default function AnalyzePage() {
       }
       setKomi(result.komi);
       setRules(result.rules);
+      analysisCacheRef.current.clear();
+      setDisplayAnalysis([]);
+      setDisplayWinrate(null);
+      result.analysisCache.forEach((value, key) => {
+        analysisCacheRef.current.set(key, value);
+      });
       loadFromTree(result.tree);
       setShowFoxwqDialog(false);
       setFoxwqUrl('');
@@ -366,7 +380,6 @@ export default function AnalyzePage() {
         komi,
         rules,
         moveTree,
-        currentPath: currentPath.map(n => n.id),
         analysisCache: includeAnalysis ? analysisCacheRef.current : undefined,
         includeAnalysis,
       };
@@ -378,7 +391,7 @@ export default function AnalyzePage() {
       console.error('SGF save error:', err);
       alert('保存 SGF 失败');
     }
-  }, [boardSize, komi, rules, moveTree, currentPath]);
+  }, [boardSize, komi, rules, moveTree]);
 
   const canGoPrev = currentNodeId !== 'root';
   const currentNode = (() => {
