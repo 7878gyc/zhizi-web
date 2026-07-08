@@ -191,6 +191,19 @@ export default function AnalyzePage() {
     });
   }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
+  // Load cached analysis data when viewing the tree offline (e.g., after SGF import)
+  useEffect(() => {
+    if (isConnected) return;
+    const cached = analysisCacheRef.current.get(currentMoveNumber);
+    if (cached && cached.data.length > 0) {
+      setDisplayAnalysis(cached.data);
+      setDisplayWinrate(cached.winrate);
+    } else {
+      setDisplayAnalysis([]);
+      setDisplayWinrate(null);
+    }
+  }, [currentMoveNumber, isConnected]);
+
   // Stable refs for callbacks used inside setInterval
   const goToNextMoveRef = useRef(goToNextMove);
   goToNextMoveRef.current = goToNextMove;
