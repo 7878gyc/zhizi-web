@@ -41,6 +41,9 @@ export default function AnalyzePage() {
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
   const autoAnalyzeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [variationMoves, setVariationMoves] = useState<VariationMove[] | null>(null);
+  const [selectedMove, setSelectedMove] = useState<string | null>(null);
+  const selectedMoveRef = useRef(selectedMove);
+  selectedMoveRef.current = selectedMove;
   const [foxwqUrl, setFoxwqUrl] = useState('');
   const [showFoxwqDialog, setShowFoxwqDialog] = useState(false);
   const [foxwqLoading, setFoxwqLoading] = useState(false);
@@ -227,6 +230,12 @@ export default function AnalyzePage() {
     };
   }, [isAutoAnalyzing, isConnected]);
 
+  // Clear variation preview when navigating to a different position
+  useEffect(() => {
+    setSelectedMove(null);
+    setVariationMoves(null);
+  }, [currentNodeId]);
+
   // Start analysis (manual)
   const handleStartAnalysis = useCallback(() => {
     if (getToken()) {
@@ -248,7 +257,7 @@ export default function AnalyzePage() {
   const handleCellClick = useCallback(
     (row: number, col: number) => {
       placeStone(row, col);
-      // Clear variation when user plays
+      setSelectedMove(null);
       setVariationMoves(null);
     },
     [placeStone]
@@ -350,10 +359,20 @@ export default function AnalyzePage() {
 
   // Variation display: when user clicks a suggestion in the table
   const handleSelectMove = useCallback((info: AnalysisInfo) => {
-    if (!info.pv || info.pv.length === 0) {
+    // Toggle: if clicking the same selected move, cancel preview
+    if (selectedMoveRef.current === info.move) {
+      setSelectedMove(null);
       setVariationMoves(null);
       return;
     }
+
+    if (!info.pv || info.pv.length === 0) {
+      setSelectedMove(null);
+      setVariationMoves(null);
+      return;
+    }
+
+    setSelectedMove(info.move);
 
     // Build variation moves from pv (max 10 steps)
     const moves: VariationMove[] = [];
@@ -767,6 +786,7 @@ export default function AnalyzePage() {
             isAnalyzing={isAnalyzing}
             speed={analysisData.length > 0 ? analysisData[0].speed : undefined}
             onSelectMove={handleSelectMove}
+            selectedMove={selectedMove}
           />
 
           {/* Hawk-Eye analysis panel */}

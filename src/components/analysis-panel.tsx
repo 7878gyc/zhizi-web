@@ -9,6 +9,7 @@ interface AnalysisPanelProps {
   isAnalyzing: boolean;
   speed?: number;
   onSelectMove?: (info: AnalysisInfo) => void;
+  selectedMove?: string | null;
 }
 
 // Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
@@ -29,6 +30,7 @@ export default function AnalysisPanel({
   isAnalyzing,
   speed,
   onSelectMove,
+  selectedMove,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
@@ -102,9 +104,11 @@ export default function AnalysisPanel({
                 return (
                   <div
                     key={`${info.move}-${idx}`}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-[#1A1A2E]/80 cursor-pointer"
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-[#1A1A2E]/80 cursor-pointer ${
+                      selectedMove === info.move ? 'bg-[#E8B931]/15 ring-1 ring-[#E8B931]/40' : ''
+                    }`}
                     onClick={() => onSelectMove?.(info)}
-                    title="点击查看变化图"
+                    title={selectedMove === info.move ? '点击取消预览' : '点击查看变化图'}
                   >
                     {/* Rank badge with color */}
                     <span
