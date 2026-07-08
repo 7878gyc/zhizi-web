@@ -45,7 +45,7 @@ function formatLZProperty(
     return `move ${coord} visits ${m.visits} winrate ${Math.round(m.winrate * 10000)} prior ${Math.round(m.prior * 10000)} scoreMean ${(m.scoreMean ?? 0).toFixed(2)}${pv}`;
   }).join(' info ');
 
-  return `${line1}\n${moves}`;
+  return `${line1}\\n${moves}`;
 }
 
 function formatComment(

@@ -167,7 +167,18 @@ function parseLZProperty(
   boardSize: number
 ): { engineWinrate: number; candidates: AnalysisInfo[] } | null {
   try {
-    const parts = lz.split('\n');
+    // Recover newlines that were escaped in formatLZProperty to survive parseSgf's normalization
+    let parts = lz.replace(/\\n/g, '\n').split('\n');
+
+    // Fallback: newlines were stripped by normalize step (old format backward compat)
+    // Header and moves become concatenated: "KataGo <wr> <visits> <scoreMean> <scoreStdev>move <coord> ..."
+    if (parts.length < 2) {
+      const firstMoveIdx = lz.indexOf('move ');
+      if (firstMoveIdx > 0) {
+        parts = [lz.substring(0, firstMoveIdx).trim(), lz.substring(firstMoveIdx)];
+      }
+    }
+
     if (parts.length < 2) return null;
 
     // Line 1: KataGo <winrate> <visits> <scoreMean> <scoreStdev>
