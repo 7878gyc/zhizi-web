@@ -10,14 +10,24 @@ export async function POST(request: NextRequest) {
     const userHash = await extractUserHash(request);
 
     const body = await request.json();
-    const { fileName, fileSize } = body as { fileName?: string; fileSize?: number };
+    const { fileName, fileSize, fileKey: providedFileKey } = body as {
+      fileName?: string;
+      fileSize?: number;
+      fileKey?: string;
+    };
 
     if (!fileName || typeof fileName !== 'string') {
       return NextResponse.json({ error: '缺少 fileName' }, { status: 400 });
     }
 
-    const uuid = randomUUID();
-    const fileKey = `records/${userHash}/${uuid}.sgf`;
+    // Use provided fileKey for overwrite, otherwise generate a new one
+    if (providedFileKey) {
+      // Security: ensure the provided key belongs to this user
+      if (!providedFileKey.startsWith(`records/${userHash}/`)) {
+        return NextResponse.json({ error: '无权覆盖此文件' }, { status: 403 });
+      }
+    }
+    const fileKey = providedFileKey ?? `records/${userHash}/${randomUUID()}.sgf`;
 
     const command = new PutObjectCommand({
       Bucket: r2Bucket,

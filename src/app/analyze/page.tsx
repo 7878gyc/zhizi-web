@@ -291,6 +291,10 @@ export default function AnalyzePage() {
       }
       setKomi(result.komi);
       setRules(result.rules);
+      setPlayerBlack(result.playerBlack);
+      setPlayerWhite(result.playerWhite);
+      setCloudSourceRecordId(null);
+      cloudSourceFileKeyRef.current = null;
       analysisCacheRef.current.clear();
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
@@ -341,6 +345,10 @@ export default function AnalyzePage() {
       }
       setKomi(result.komi);
       setRules(result.rules);
+      setPlayerBlack(result.playerBlack);
+      setPlayerWhite(result.playerWhite);
+      setCloudSourceRecordId(null);
+      cloudSourceFileKeyRef.current = null;
       analysisCacheRef.current.clear();
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
@@ -393,11 +401,17 @@ export default function AnalyzePage() {
   const [showSgfMenu, setShowSgfMenu] = useState(false);
   const [cloudSaving, setCloudSaving] = useState(false);
   const [showCloudImport, setShowCloudImport] = useState(false);
-  const [cloudRecords, setCloudRecords] = useState<{ id: string; fileName: string; fileSize: number; createdAt: string }[]>([]);
+  const [cloudRecords, setCloudRecords] = useState<{ id: string; fileName: string; fileSize: number; createdAt: string; fileKey: string }[]>([]);
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudImporting, setCloudImporting] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState('');
   const sgfMenuRef = useRef<HTMLDivElement>(null);
+  // Player names extracted from imported SGF
+  const [playerBlack, setPlayerBlack] = useState('');
+  const [playerWhite, setPlayerWhite] = useState('');
+  // Track cloud source for overwrite-on-save
+  const [cloudSourceRecordId, setCloudSourceRecordId] = useState<string | null>(null);
+  const cloudSourceFileKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!showSgfMenu) return;
@@ -420,16 +434,22 @@ export default function AnalyzePage() {
         moveTree,
         analysisCache: includeAnalysis ? analysisCacheRef.current : undefined,
         includeAnalysis,
+        playerBlack: playerBlack || undefined,
+        playerWhite: playerWhite || undefined,
       };
       const content = includeAnalysis ? generateAnalyzedSGF(options) : generatePureSGF(options);
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const suffix = includeAnalysis ? '_analyzed' : '';
-      downloadSgfFile(content, `game_${timestamp}${suffix}.sgf`);
+      const baseName = playerBlack && playerWhite
+        ? `${playerBlack}vs${playerWhite}`
+        : `新盘面-${timestamp}`;
+      const fileName = `${baseName}${suffix}.sgf`;
+      downloadSgfFile(content, fileName);
     } catch (err) {
       console.error('SGF save error:', err);
       alert('保存 SGF 失败');
     }
-  }, [boardSize, komi, rules, moveTree]);
+  }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite]);
 
   const handleSaveToCloud = useCallback(async () => {
     setShowSgfMenu(false);
@@ -442,23 +462,33 @@ export default function AnalyzePage() {
         moveTree,
         analysisCache: analysisCacheRef.current,
         includeAnalysis: true,
+        playerBlack: playerBlack || undefined,
+        playerWhite: playerWhite || undefined,
       };
       const content = generateAnalyzedSGF(options);
       const blob = new Blob([content], { type: 'application/x-go-sgf' });
 
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const fileName = `game_${timestamp}_analyzed.sgf`;
+      const baseName = playerBlack && playerWhite
+        ? `${playerBlack}vs${playerWhite}`
+        : `新盘面-${timestamp}`;
+      const fileName = `${baseName}.sgf`;
 
       const token = getToken();
+      const isOverwrite = cloudSourceRecordId !== null && cloudSourceFileKeyRef.current !== null;
 
-      // Step 1: Get pre-signed upload URL (server-side, no R2 network needed)
+      // Step 1: Get pre-signed upload URL
+      const uploadBody: Record<string, unknown> = { fileName, fileSize: blob.size };
+      if (isOverwrite) {
+        uploadBody.fileKey = cloudSourceFileKeyRef.current;
+      }
       const uploadResp = await fetch('/api/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ fileName, fileSize: blob.size }),
+        body: JSON.stringify(uploadBody),
       });
 
       if (!uploadResp.ok) {
@@ -481,19 +511,40 @@ export default function AnalyzePage() {
         );
       }
 
-      // Step 3: Save record to database
-      const saveResp = await fetch('/api/records', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
-      });
+      // Step 3: Save or update record in database
+      if (isOverwrite) {
+        // Overwrite: update existing record's fileName
+        const patchResp = await fetch(`/api/records/${cloudSourceRecordId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ fileName }),
+        });
 
-      if (!saveResp.ok) {
-        const err = await saveResp.json();
-        throw new Error(err.error || '保存记录失败');
+        if (!patchResp.ok) {
+          const err = await patchResp.json();
+          throw new Error(err.error || '更新记录失败');
+        }
+        // Clear source tracking after overwrite
+        setCloudSourceRecordId(null);
+        cloudSourceFileKeyRef.current = null;
+      } else {
+        // New save: create record
+        const saveResp = await fetch('/api/records', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
+        });
+
+        if (!saveResp.ok) {
+          const err = await saveResp.json();
+          throw new Error(err.error || '保存记录失败');
+        }
       }
 
       alert('棋谱已保存到云棋谱库');
@@ -503,7 +554,7 @@ export default function AnalyzePage() {
     } finally {
       setCloudSaving(false);
     }
-  }, [boardSize, komi, rules, moveTree]);
+  }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite, cloudSourceRecordId]);
 
   /** 打开云导入弹窗并加载棋谱列表 */
   const handleOpenCloudImport = useCallback(() => {
@@ -527,7 +578,8 @@ export default function AnalyzePage() {
   }, []);
 
   /** 从云端选择棋谱并下载导入 */
-  const handleSelectCloudRecord = useCallback(async (id: string) => {
+  const handleSelectCloudRecord = useCallback(async (rec: { id: string; fileName: string; fileKey?: string }) => {
+    const id = rec.id;
     setCloudImporting(id);
     setCloudError('');
     const token = getToken();
@@ -563,6 +615,11 @@ export default function AnalyzePage() {
       if (parsed.rules) {
         setRules(parsed.rules);
       }
+      setPlayerBlack(parsed.playerBlack);
+      setPlayerWhite(parsed.playerWhite);
+      // Track cloud source for overwrite-on-save
+      setCloudSourceRecordId(id);
+      cloudSourceFileKeyRef.current = rec.fileKey ?? null;
 
       // 5. 加载棋谱树
       loadFromTree(parsed.tree);
@@ -771,7 +828,7 @@ export default function AnalyzePage() {
                 {cloudRecords.map(rec => (
                   <button
                     key={rec.id}
-                    onClick={() => handleSelectCloudRecord(rec.id)}
+                    onClick={() => handleSelectCloudRecord(rec)}
                     disabled={cloudImporting !== null}
                     className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[#2A3A5C]/50 rounded transition-colors disabled:opacity-50"
                   >
@@ -905,6 +962,10 @@ export default function AnalyzePage() {
                 analysisCacheRef.current.clear();
                 setDisplayAnalysis([]);
                 setDisplayWinrate(null);
+                setPlayerBlack('');
+                setPlayerWhite('');
+                setCloudSourceRecordId(null);
+                cloudSourceFileKeyRef.current = null;
               }}
               className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
             >

@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
         fileSize: true,
         createdAt: true,
         gameInfo: true,
+        fileKey: true,
       },
     });
 

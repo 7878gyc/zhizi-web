@@ -16,6 +16,8 @@ interface SgfParseResult {
   boardSize: number;
   komi: number;
   rules: string;
+  playerBlack: string;
+  playerWhite: string;
 }
 
 const COL_LETTERS_GTP = 'ABCDEFGHJKLMNOPQRST';
@@ -127,6 +129,8 @@ export function parseSgf(text: string): SgfParseResult {
   let boardSize = 19;
   let komi = 6.5;
   let rules = 'chinese';
+  let playerBlack = '';
+  let playerWhite = '';
 
   if (root.properties.SZ) {
     boardSize = parseInt(root.properties.SZ[0], 10) || 19;
@@ -142,8 +146,14 @@ export function parseSgf(text: string): SgfParseResult {
       rules = 'aga';
     }
   }
+  if (root.properties.PB) {
+    playerBlack = root.properties.PB[0];
+  }
+  if (root.properties.PW) {
+    playerWhite = root.properties.PW[0];
+  }
 
-  return { root, boardSize, komi, rules };
+  return { root, boardSize, komi, rules, playerBlack, playerWhite };
 }
 
 /** Convert SGF coordinate to (row, col) */
@@ -352,9 +362,11 @@ export function sgfToMoveTree(sgfText: string): {
   komi: number;
   rules: string;
   analysisCache: AnalysisCache;
+  playerBlack: string;
+  playerWhite: string;
 } | null {
   try {
-    const { root, boardSize, komi, rules } = parseSgf(sgfText);
+    const { root, boardSize, komi, rules, playerBlack, playerWhite } = parseSgf(sgfText);
 
     const rootNode: MoveNode = {
       id: 'root',
@@ -382,7 +394,7 @@ export function sgfToMoveTree(sgfText: string): {
       }
     }
 
-    return { tree: rootNode, boardSize, komi, rules, analysisCache };
+    return { tree: rootNode, boardSize, komi, rules, analysisCache, playerBlack, playerWhite };
   } catch {
     return null;
   }
@@ -394,6 +406,8 @@ export function parseSgfContent(sgfText: string): {
   komi: number;
   rules: string;
   analysisCache: AnalysisCache;
+  playerBlack: string;
+  playerWhite: string;
 } | null {
   return sgfToMoveTree(sgfText);
 }
@@ -404,6 +418,8 @@ export async function readSgfFile(file: File): Promise<{
   komi: number;
   rules: string;
   analysisCache: AnalysisCache;
+  playerBlack: string;
+  playerWhite: string;
 } | null> {
   return new Promise((resolve) => {
     const reader = new FileReader();
