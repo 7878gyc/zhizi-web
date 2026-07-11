@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -391,6 +391,7 @@ export default function AnalyzePage() {
 
   // SGF save
   const [showSgfMenu, setShowSgfMenu] = useState(false);
+  const [cloudSaving, setCloudSaving] = useState(false);
   const sgfMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -422,6 +423,77 @@ export default function AnalyzePage() {
     } catch (err) {
       console.error('SGF save error:', err);
       alert('保存 SGF 失败');
+    }
+  }, [boardSize, komi, rules, moveTree]);
+
+  const handleSaveToCloud = useCallback(async () => {
+    setShowSgfMenu(false);
+    setCloudSaving(true);
+    try {
+      const options = {
+        boardSize,
+        komi,
+        rules,
+        moveTree,
+        analysisCache: analysisCacheRef.current,
+        includeAnalysis: true,
+      };
+      const content = generateAnalyzedSGF(options);
+      const blob = new Blob([content], { type: 'application/x-go-sgf' });
+
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const fileName = `game_${timestamp}_analyzed.sgf`;
+
+      // Step 1: Get pre-signed upload URL
+      const token = getToken();
+      const uploadResp = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ fileName, fileSize: blob.size }),
+      });
+
+      if (!uploadResp.ok) {
+        const err = await uploadResp.json();
+        throw new Error(err.error || '获取上传链接失败');
+      }
+
+      const { uploadUrl, fileKey } = await uploadResp.json();
+
+      // Step 2: Upload directly to R2
+      const putResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-go-sgf' },
+        body: blob,
+      });
+
+      if (!putResp.ok) {
+        throw new Error('文件上传到云端失败');
+      }
+
+      // Step 3: Save record to database
+      const saveResp = await fetch('/api/records', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
+      });
+
+      if (!saveResp.ok) {
+        const err = await saveResp.json();
+        throw new Error(err.error || '保存记录失败');
+      }
+
+      alert('棋谱已保存到云棋谱库');
+    } catch (err) {
+      console.error('Cloud save error:', err);
+      alert(err instanceof Error ? err.message : '保存到云端失败');
+    } finally {
+      setCloudSaving(false);
     }
   }, [boardSize, komi, rules, moveTree]);
 
@@ -758,6 +830,14 @@ export default function AnalyzePage() {
                   className="w-full text-left px-3 py-2 text-xs text-[#C8CAD0] hover:bg-[#2A3A5C] transition-colors border-t border-[#2A3A5C]/30"
                 >
                   带分析的棋谱文件
+                </button>
+                <button
+                  onClick={handleSaveToCloud}
+                  disabled={cloudSaving}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-[#E8B931] hover:bg-[#2A3A5C] transition-colors border-t border-[#2A3A5C]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Cloud className="w-3.5 h-3.5" />
+                  {cloudSaving ? '保存中...' : '保存到云棋谱库'}
                 </button>
               </div>
             )}
