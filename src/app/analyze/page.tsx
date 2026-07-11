@@ -15,7 +15,7 @@ import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
 import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
 import { gtpToCoord } from '@/lib/go-types';
-import { readSgfFile } from '@/lib/sgf-parser';
+import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
 
 interface VariationMove {
@@ -392,6 +392,11 @@ export default function AnalyzePage() {
   // SGF save
   const [showSgfMenu, setShowSgfMenu] = useState(false);
   const [cloudSaving, setCloudSaving] = useState(false);
+  const [showCloudImport, setShowCloudImport] = useState(false);
+  const [cloudRecords, setCloudRecords] = useState<{ id: string; fileName: string; fileSize: number; createdAt: string }[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudImporting, setCloudImporting] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState('');
   const sgfMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -496,6 +501,89 @@ export default function AnalyzePage() {
       setCloudSaving(false);
     }
   }, [boardSize, komi, rules, moveTree]);
+
+  /** 打开云导入弹窗并加载棋谱列表 */
+  const handleOpenCloudImport = useCallback(() => {
+    setShowCloudImport(true);
+    setCloudError('');
+    setCloudLoading(true);
+    const token = getToken();
+    fetch('/api/records', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.error) {
+          setCloudError(data.error);
+        } else {
+          setCloudRecords(data.records || []);
+        }
+      })
+      .catch(() => setCloudError('网络错误'))
+      .finally(() => setCloudLoading(false));
+  }, []);
+
+  /** 从云端选择棋谱并下载导入 */
+  const handleSelectCloudRecord = useCallback(async (id: string) => {
+    setCloudImporting(id);
+    setCloudError('');
+    const token = getToken();
+
+    try {
+      // 1. 获取下载 URL
+      const dlResp = await fetch(`/api/records/${id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const dlData = await dlResp.json();
+      if (!dlResp.ok) {
+        throw new Error(dlData.error || '获取下载链接失败');
+      }
+
+      // 2. 下载 SGF 内容
+      const fileResp = await fetch(dlData.downloadUrl);
+      if (!fileResp.ok) {
+        throw new Error('下载棋谱文件失败');
+      }
+      const sgfText = await fileResp.text();
+
+      // 3. 解析 SGF
+      const parsed = parseSgfContent(sgfText);
+      if (!parsed) {
+        throw new Error('无法解析棋谱文件');
+      }
+
+      // 4. 设置棋盘大小、贴目、规则
+      if (parsed.boardSize >= 1 && parsed.boardSize <= 19) {
+        setBoardSize(parsed.boardSize);
+      }
+      setKomi(parsed.komi);
+      if (parsed.rules) {
+        setRules(parsed.rules);
+      }
+
+      // 5. 加载棋谱树
+      loadFromTree(parsed.tree);
+
+      // 6. 加载分析数据缓存
+      if (parsed.analysisCache) {
+        analysisCacheRef.current = parsed.analysisCache;
+      }
+
+      // 7. 跳转到最后一手
+      let lastNode = parsed.tree;
+      while (lastNode.children.length > 0) {
+        lastNode = lastNode.children[0];
+      }
+      jumpToNode(lastNode.id);
+
+      setShowCloudImport(false);
+    } catch (err) {
+      console.error('Cloud import error:', err);
+      setCloudError(err instanceof Error ? err.message : '导入失败');
+    } finally {
+      setCloudImporting(null);
+    }
+  }, [setBoardSize, setKomi, setRules, loadFromTree, jumpToNode]);
 
   const canGoPrev = currentNodeId !== 'root';
   const currentNode = (() => {
@@ -610,6 +698,12 @@ export default function AnalyzePage() {
             野狐导入
           </button>
           <button
+            onClick={handleOpenCloudImport}
+            className="px-2.5 py-1 text-xs bg-[#E8B931]/15 hover:bg-[#E8B931]/25 text-[#E8B931] rounded transition-colors"
+          >
+            云棋谱导入
+          </button>
+          <button
             onClick={handleLogout}
             className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
           >
@@ -647,6 +741,66 @@ export default function AnalyzePage() {
                 className="flex-1 px-3 py-2 text-sm bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30 hover:bg-[#E8B931]/30 rounded transition-colors disabled:opacity-50"
               >
                 {foxwqLoading ? '导入中...' : '导入'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud import dialog */}
+      {showCloudImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#16213E] rounded-lg p-5 w-[420px] border border-[#2A3A5C] shadow-xl">
+            <h3 className="text-sm font-bold text-[#E8B931] mb-3">从云棋谱库导入</h3>
+
+            {cloudError && (
+              <p className="text-xs text-[#FF6B6B] mb-3">{cloudError}</p>
+            )}
+
+            {cloudLoading ? (
+              <div className="py-10 text-center text-[#8B8FA3] text-sm">加载中...</div>
+            ) : cloudRecords.length === 0 ? (
+              <div className="py-10 text-center text-[#8B8FA3] text-sm">
+                云端暂无棋谱，可先保存棋谱到云端
+              </div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto -mx-1">
+                {cloudRecords.map(rec => (
+                  <button
+                    key={rec.id}
+                    onClick={() => handleSelectCloudRecord(rec.id)}
+                    disabled={cloudImporting !== null}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[#2A3A5C]/50 rounded transition-colors disabled:opacity-50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-[#E0E0E0] truncate">{rec.fileName}</p>
+                      <p className="text-xs text-[#8B8FA3] mt-0.5">
+                        {new Date(rec.createdAt).toLocaleString('zh-CN', {
+                          month: '2-digit', day: '2-digit',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                        &nbsp;&middot;&nbsp;
+                        {rec.fileSize < 1024
+                          ? `${rec.fileSize} B`
+                          : rec.fileSize < 1024 * 1024
+                            ? `${(rec.fileSize / 1024).toFixed(1)} KB`
+                            : `${(rec.fileSize / (1024 * 1024)).toFixed(1)} MB`}
+                      </p>
+                    </div>
+                    <span className="text-xs text-[#E8B931] ml-3 shrink-0">
+                      {cloudImporting === rec.id ? '导入中...' : '导入'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setShowCloudImport(false); setCloudError(''); }}
+                className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
+              >
+                取消
               </button>
             </div>
           </div>
