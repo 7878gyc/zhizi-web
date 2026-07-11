@@ -961,11 +961,15 @@ export default function AnalyzePage() {
             ) : (
               <div className="max-h-64 overflow-y-auto -mx-1">
                 {cloudRecords.map(rec => (
-                  <button
+                  <div
                     key={rec.id}
-                    onClick={() => handleSelectCloudRecord(rec)}
-                    disabled={cloudImporting !== null}
-                    className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[#2A3A5C]/50 rounded transition-colors disabled:opacity-50"
+                    onClick={() => { if (!cloudImporting) handleSelectCloudRecord(rec); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !cloudImporting) handleSelectCloudRecord(rec); }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[#2A3A5C]/50 rounded transition-colors ${
+                      cloudImporting !== null ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
+                    }`}
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-[#E0E0E0] truncate">{rec.fileName}</p>
@@ -998,7 +1002,7 @@ export default function AnalyzePage() {
                         {cloudImporting === rec.id ? '导入中...' : '导入'}
                       </span>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
