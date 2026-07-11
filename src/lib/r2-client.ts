@@ -8,12 +8,19 @@ function requireEnv(name: string): string {
   return value;
 }
 
+const r2Endpoint = process.env['R2_ENDPOINT'] ||
+  `https://${requireEnv('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`;
+
 const s3Client = new S3Client({
   region: 'auto',
-  endpoint: `https://${requireEnv('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`,
+  endpoint: r2Endpoint,
   credentials: {
     accessKeyId: requireEnv('R2_ACCESS_KEY_ID'),
     secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
+  },
+  requestHandler: {
+    // Prevent hanging requests
+    requestTimeout: 30_000,
   },
 });
 
