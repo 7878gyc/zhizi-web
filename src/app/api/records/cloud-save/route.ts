@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     });
 
     await s3Client.send(command);
+    console.log(`[CloudSave] Uploaded to R2: ${fileKey}`);
 
     // 保存数据库记录
     const record = await prisma.record.create({
@@ -48,7 +49,11 @@ export async function POST(request: NextRequest) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    console.error('Cloud save error:', err);
-    return NextResponse.json({ error: '保存到云端失败' }, { status: 500 });
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error('[CloudSave] Error:', msg);
+    if (err instanceof Error && err.stack) {
+      console.error('[CloudSave] Stack:', err.stack);
+    }
+    return NextResponse.json({ error: `保存到云端失败: ${msg}` }, { status: 500 });
   }
 }

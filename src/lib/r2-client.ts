@@ -19,8 +19,8 @@ const s3Client = new S3Client({
     secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
   },
   requestHandler: {
-    // Prevent hanging requests
     requestTimeout: 30_000,
+    connectionTimeout: 10_000,
   },
 });
 
