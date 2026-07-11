@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2 } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -645,6 +645,33 @@ export default function AnalyzePage() {
     }
   }, [setBoardSize, setKomi, setRules, loadFromTree, jumpToNode]);
 
+  /** 删除云棋谱记录 */
+  const handleDeleteCloudRecord = useCallback(async (id: string, fileName: string) => {
+    if (!confirm(`确认删除「${fileName}」？此操作不可撤销。`)) return;
+
+    const token = getToken();
+    try {
+      const resp = await fetch(`/api/records/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || '删除失败');
+      }
+      // Remove from local list
+      setCloudRecords(prev => prev.filter(r => r.id !== id));
+      // If deleted record is the current cloud source, clear tracking
+      if (cloudSourceRecordId === id) {
+        setCloudSourceRecordId(null);
+        cloudSourceFileKeyRef.current = null;
+      }
+    } catch (err) {
+      console.error('Cloud delete error:', err);
+      alert(err instanceof Error ? err.message : '删除失败');
+    }
+  }, [cloudSourceRecordId]);
+
   const canGoPrev = currentNodeId !== 'root';
   const currentNode = (() => {
     const findInTree = (node: typeof moveTree): typeof moveTree | null => {
@@ -847,9 +874,22 @@ export default function AnalyzePage() {
                             : `${(rec.fileSize / (1024 * 1024)).toFixed(1)} MB`}
                       </p>
                     </div>
-                    <span className="text-xs text-[#E8B931] ml-3 shrink-0">
-                      {cloudImporting === rec.id ? '导入中...' : '导入'}
-                    </span>
+                    <div className="flex items-center gap-1.5 ml-3 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCloudRecord(rec.id, rec.fileName);
+                        }}
+                        disabled={cloudImporting !== null}
+                        className="p-1 rounded hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] transition-colors disabled:opacity-30"
+                        title="删除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-xs text-[#E8B931]">
+                        {cloudImporting === rec.id ? '导入中...' : '导入'}
+                      </span>
+                    </div>
                   </button>
                 ))}
               </div>
