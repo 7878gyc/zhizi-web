@@ -444,53 +444,22 @@ export default function AnalyzePage() {
         includeAnalysis: true,
       };
       const content = generateAnalyzedSGF(options);
-      const blob = new Blob([content], { type: 'application/x-go-sgf' });
-
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const fileName = `game_${timestamp}_analyzed.sgf`;
 
-      // Step 1: Get pre-signed upload URL
       const token = getToken();
-      const uploadResp = await fetch('/api/upload', {
+      const resp = await fetch('/api/records/cloud-save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ fileName, fileSize: blob.size }),
+        body: JSON.stringify({ content, fileName }),
       });
 
-      if (!uploadResp.ok) {
-        const err = await uploadResp.json();
-        throw new Error(err.error || '获取上传链接失败');
-      }
-
-      const { uploadUrl, fileKey } = await uploadResp.json();
-
-      // Step 2: Upload directly to R2
-      const putResp = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/x-go-sgf' },
-        body: blob,
-      });
-
-      if (!putResp.ok) {
-        throw new Error('文件上传到云端失败');
-      }
-
-      // Step 3: Save record to database
-      const saveResp = await fetch('/api/records', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
-      });
-
-      if (!saveResp.ok) {
-        const err = await saveResp.json();
-        throw new Error(err.error || '保存记录失败');
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || '保存到云端失败');
       }
 
       alert('棋谱已保存到云棋谱库');
