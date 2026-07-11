@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2 } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -409,9 +409,49 @@ export default function AnalyzePage() {
   // Player names extracted from imported SGF
   const [playerBlack, setPlayerBlack] = useState('');
   const [playerWhite, setPlayerWhite] = useState('');
+  const [editingPlayer, setEditingPlayer] = useState<'black' | 'white' | null>(null);
+  const [editValue, setEditValue] = useState('');
   // Track cloud source for overwrite-on-save
   const [cloudSourceRecordId, setCloudSourceRecordId] = useState<string | null>(null);
   const cloudSourceFileKeyRef = useRef<string | null>(null);
+
+  // Compute full-game winrate history from moveTree main branch (fixed length, not path-dependent)
+  const fullWinrateHistory = useMemo(() => {
+    const history: (number | null)[] = [null]; // index 0 = root
+    let node: typeof moveTree | null = moveTree;
+    while (node) {
+      // Skip root node (already null at index 0)
+      if (node.moveNumber > 0) {
+        history.push(node.winrate ?? null);
+      }
+      node = node.children.length > 0 ? node.children[0] : null;
+    }
+    return history;
+  }, [moveTree]);
+
+  // Move number → node ID map for click-to-jump
+  const moveNumberToNodeId = useMemo(() => {
+    const map = new Map<number, string>();
+    let node: typeof moveTree | null = moveTree;
+    while (node) {
+      if (node.moveNumber > 0) {
+        map.set(node.moveNumber, node.id);
+      }
+      node = node.children.length > 0 ? node.children[0] : null;
+    }
+    return map;
+  }, [moveTree]);
+
+  // Click-to-jump from winrate chart
+  const handleWinrateClick = useCallback(
+    (moveNumber: number) => {
+      const nodeId = moveNumberToNodeId.get(moveNumber);
+      if (nodeId) {
+        jumpToNode(nodeId);
+      }
+    },
+    [moveNumberToNodeId, jumpToNode],
+  );
 
   useEffect(() => {
     if (!showSgfMenu) return;
@@ -760,6 +800,74 @@ export default function AnalyzePage() {
             {boardSize}路 · {currentPlayer === 'black' ? '黑' : '白'}方落子
             {isConnected && ' · AI已连接'}
           </span>
+          {(playerBlack || playerWhite) && (
+            <>
+              <span className="text-xs text-[#4A4A6A]">|</span>
+              <span className="text-xs text-[#8B8FA3]">
+                {editingPlayer === 'black' ? (
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onBlur={() => {
+                      setPlayerBlack(editValue.trim());
+                      setEditingPlayer(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        setPlayerBlack(editValue.trim());
+                        setEditingPlayer(null);
+                      } else if (e.key === 'Escape') {
+                        setEditingPlayer(null);
+                      }
+                    }}
+                    className="w-24 px-1 py-0.5 text-xs bg-[#1A1A2E] border border-[#E8B931]/50 rounded text-[#E0E0E0] focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setEditingPlayer('black'); setEditValue(playerBlack); }}
+                    className="text-[#4A9EFF] hover:text-[#6AB4FF] transition-colors inline-flex items-center gap-0.5"
+                    title="编辑黑方姓名"
+                  >
+                    {playerBlack}
+                    <Pencil className="w-2.5 h-2.5 text-[#4A4A6A]" />
+                  </button>
+                )}
+                <span className="text-[#8B8FA3]"> (黑)</span>
+                <span className="text-[#4A4A6A] mx-1">vs</span>
+                {editingPlayer === 'white' ? (
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onBlur={() => {
+                      setPlayerWhite(editValue.trim());
+                      setEditingPlayer(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        setPlayerWhite(editValue.trim());
+                        setEditingPlayer(null);
+                      } else if (e.key === 'Escape') {
+                        setEditingPlayer(null);
+                      }
+                    }}
+                    className="w-24 px-1 py-0.5 text-xs bg-[#1A1A2E] border border-[#E8B931]/50 rounded text-[#E0E0E0] focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setEditingPlayer('white'); setEditValue(playerWhite); }}
+                    className="text-[#E0E0E0] hover:text-white transition-colors inline-flex items-center gap-0.5"
+                    title="编辑白方姓名"
+                  >
+                    {playerWhite}
+                    <Pencil className="w-2.5 h-2.5 text-[#4A4A6A]" />
+                  </button>
+                )}
+                <span className="text-[#8B8FA3]"> (白)</span>
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {userDisplayName && (
@@ -1112,8 +1220,9 @@ export default function AnalyzePage() {
 
           {/* Winrate chart */}
           <WinrateChart
-            winrateHistory={winrateHistory}
+            winrateHistory={fullWinrateHistory}
             currentMoveNumber={currentMoveNumber}
+            onClickMove={handleWinrateClick}
           />
 
           {/* Analysis panel (winrate bar + suggestion table) */}

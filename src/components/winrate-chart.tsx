@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 
 interface WinrateChartProps {
   winrateHistory: (number | null)[];
   currentMoveNumber: number;
+  onClickMove?: (moveNumber: number) => void;
 }
 
 const CHART_HEIGHT = 120;
@@ -13,6 +14,7 @@ const CHART_PADDING = { top: 10, right: 10, bottom: 20, left: 35 };
 export default function WinrateChart({
   winrateHistory,
   currentMoveNumber,
+  onClickMove,
 }: WinrateChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,13 +174,46 @@ export default function WinrateChart({
     }
   }, [winrateHistory, currentMoveNumber, canvasWidth]);
 
+  // Click-to-jump handler
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!onClickMove || !canvasRef.current) return;
+
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+
+      const plotLeft = CHART_PADDING.left;
+      const plotRight = canvasWidth - CHART_PADDING.right;
+      const plotWidth = plotRight - plotLeft;
+
+      if (x < plotLeft || x > plotRight) return;
+
+      const dataPoints = winrateHistory.slice(1);
+      const numPoints = dataPoints.length;
+      if (numPoints < 1) return;
+
+      const maxMoves = Math.max(numPoints + 5, 20);
+      const xStep = plotWidth / maxMoves;
+
+      // Calculate which move was clicked
+      const clickedIdx = Math.floor((x - plotLeft) / xStep);
+      if (clickedIdx < 0 || clickedIdx >= numPoints) return;
+
+      const moveNumber = clickedIdx + 1; // 1-based
+      onClickMove(moveNumber);
+    },
+    [onClickMove, canvasWidth, winrateHistory],
+  );
+
   return (
     <div className="space-y-1.5">
       <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">胜率曲线</span>
       <div ref={containerRef} className="w-full">
         <canvas
           ref={canvasRef}
-          style={{ width: canvasWidth, height: CHART_HEIGHT }}
+          onClick={handleCanvasClick}
+          style={{ width: canvasWidth, height: CHART_HEIGHT, cursor: onClickMove ? 'pointer' : 'default' }}
           className="rounded-lg"
         />
       </div>
