@@ -444,22 +444,56 @@ export default function AnalyzePage() {
         includeAnalysis: true,
       };
       const content = generateAnalyzedSGF(options);
+      const blob = new Blob([content], { type: 'application/x-go-sgf' });
+
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const fileName = `game_${timestamp}_analyzed.sgf`;
 
       const token = getToken();
-      const resp = await fetch('/api/records/cloud-save', {
+
+      // Step 1: Get pre-signed upload URL (server-side, no R2 network needed)
+      const uploadResp = await fetch('/api/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ content, fileName }),
+        body: JSON.stringify({ fileName, fileSize: blob.size }),
       });
 
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.error || '保存到云端失败');
+      if (!uploadResp.ok) {
+        const err = await uploadResp.json();
+        throw new Error(err.error || '获取上传链接失败');
+      }
+
+      const { uploadUrl, fileKey } = await uploadResp.json();
+
+      // Step 2: Upload directly to R2 from the browser
+      const putResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-go-sgf' },
+        body: blob,
+      });
+
+      if (!putResp.ok) {
+        throw new Error(
+          '文件上传到云端失败，请确认 R2 存储桶已配置 CORS（允许 PUT 方法）'
+        );
+      }
+
+      // Step 3: Save record to database
+      const saveResp = await fetch('/api/records', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
+      });
+
+      if (!saveResp.ok) {
+        const err = await saveResp.json();
+        throw new Error(err.error || '保存记录失败');
       }
 
       alert('棋谱已保存到云棋谱库');

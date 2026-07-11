@@ -18,10 +18,6 @@ const s3Client = new S3Client({
     accessKeyId: requireEnv('R2_ACCESS_KEY_ID'),
     secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
   },
-  requestHandler: {
-    requestTimeout: 30_000,
-    connectionTimeout: 10_000,
-  },
 });
 
 export const r2Bucket = requireEnv('R2_BUCKET_NAME');
