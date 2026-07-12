@@ -138,7 +138,7 @@ function ColorStats({ results, color, colorClass }: { results: HawkEyeMoveResult
         <div className="text-[#8B8FA3]">问题手</div>
         <div className="text-right font-mono text-[#FF6B6B]">{problemMoves.length}</div>
         <div className="text-[#8B8FA3]">平均亏损</div>
-        <div className="text-right font-mono text-[#E8B931]">{avgDrop.toFixed(2)}%</div>
+        <div className="text-right font-mono text-[#E8B931]">{avgDrop.toFixed(1)}%</div>
       </div>
     </div>
   );
