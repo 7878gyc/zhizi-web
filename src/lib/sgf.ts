@@ -51,7 +51,8 @@ function formatLZProperty(
 function formatComment(
   candidates: AnalysisInfo[],
   winrate: number | null,
-  isBlackMove: boolean
+  isBlackMove: boolean,
+  komi: number,
 ): string {
   if (winrate == null || candidates.length === 0) return '';
 
@@ -70,7 +71,7 @@ function formatComment(
     `黑 胜率: ${wrPct}% (${deltaSign}${deltaPct}%)`,
     `领先目数 ${lead.toFixed(1)} 标准差 ${stdev.toFixed(1)}`,
     `(KataGo / ${formatVisits(visits)} 计算量)`,
-    `贴目 6.5`,
+    `贴目 ${komi.toFixed(1)}`,
   ].join('\\n');
 }
 
@@ -134,7 +135,7 @@ export function generateSGF(options: SgfOptions): string {
       const cached = analysisCache.get(i);
       if (cached && cached.data.length > 0) {
         const lz = formatLZProperty(cached.data, cached.winrate, boardSize);
-        const comment = formatComment(cached.data, cached.winrate, isBlack);
+        const comment = formatComment(cached.data, cached.winrate, isBlack, komi);
         if (lz) nodeProps.push(`LZ[${escapeSgfText(lz)}]`);
         if (comment) nodeProps.push(`C[${escapeSgfText(comment)}]`);
       }

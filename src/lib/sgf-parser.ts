@@ -127,7 +127,7 @@ export function parseSgf(text: string): SgfParseResult {
   const root = parseNode();
 
   let boardSize = 19;
-  let komi = 6.5;
+  let komi = 7.5;
   let rules = 'chinese';
   let playerBlack = '';
   let playerWhite = '';

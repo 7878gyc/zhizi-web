@@ -149,7 +149,7 @@ function cloneTree(node: MoveNode, newParentId: string | null = null): MoveNode 
 
 export function useGoGame(initialSize: number = 19): UseGoGameReturn {
   const [boardSize, setBoardSizeState] = useState(initialSize);
-  const [komi, setKomiState] = useState(6.5);
+  const [komi, setKomiState] = useState(7.5);
   const [rules, setRulesState] = useState('chinese');
   const [board, setBoard] = useState<('black' | 'white' | null)[][]>(() => createEmptyBoard(initialSize));
   const [currentPlayer, setCurrentPlayer] = useState<'black' | 'white'>('black');
