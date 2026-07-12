@@ -58,7 +58,7 @@ export const GPU_TYPES = [
   { value: '2x', label: '2x GPU' },
   { value: '3x', label: '3x GPU' },
   { value: '4x', label: '4x GPU' },
-  { value: 'shared', label: 'VIP共享' },
+  { value: 'vip-share', label: 'VIP共享' },
 ];
 
 // Weights available

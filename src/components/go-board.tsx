@@ -209,7 +209,7 @@ export default function GoBoard({
           }
 
           // Winrate text
-          const winrateText = `${Math.round(info.winrate * 100)}%`;
+          const winrateText = `${(info.winrate * 100).toFixed(1)}%`;
           const scoreText = info.scoreMean !== undefined
             ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
             : '';
