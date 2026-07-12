@@ -1246,6 +1246,7 @@ export default function AnalyzePage() {
             currentWinrate={displayWinrate}
             gtpMoves={gtpMoves}
             isConnected={isConnected}
+            analysisCache={analysisCacheRef.current}
           />
         </div>
       </div>

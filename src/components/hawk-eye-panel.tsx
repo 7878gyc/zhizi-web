@@ -34,6 +34,8 @@ interface HawkEyePanelProps {
   currentWinrate: number | null;
   gtpMoves: string[];
   isConnected: boolean;
+  /** Pre-built analysis cache from SGF import (offline mode). Populates internal history on mount. */
+  analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
 }
 
 function computeResults(history: Map<number, HawkEyeRecord>, gtpMoves: string[]): HawkEyeMoveResult[] {
@@ -147,6 +149,7 @@ export default function HawkEyePanel({
   currentWinrate,
   gtpMoves,
   isConnected,
+  analysisCache,
 }: HawkEyePanelProps) {
   const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
   const [version, setVersion] = useState(0);
@@ -157,6 +160,24 @@ export default function HawkEyePanel({
   winrateRef.current = currentWinrate;
   const movesRef = useRef(gtpMoves);
   movesRef.current = gtpMoves;
+
+  // Populate historyRef from pre-built analysis cache (SGF import / offline mode)
+  const populatedCacheRef = useRef<Map<number, { data: AnalysisInfo[]; winrate: number | null }> | undefined>(undefined);
+  useEffect(() => {
+    if (!analysisCache || analysisCache.size === 0) return;
+    // Skip if we've already populated from this exact cache instance
+    if (analysisCache === populatedCacheRef.current) return;
+    populatedCacheRef.current = analysisCache;
+
+    historyRef.current.clear();
+    analysisCache.forEach((record, key) => {
+      historyRef.current.set(key, {
+        candidates: record.data,
+        winrate: record.winrate ?? 0,
+      });
+    });
+    setVersion(v => v + 1);
+  }, [analysisCache]);
 
   useEffect(() => {
     if (!isConnected) return;
