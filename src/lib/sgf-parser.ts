@@ -22,9 +22,18 @@ interface SgfParseResult {
 
 const COL_LETTERS_GTP = 'ABCDEFGHJKLMNOPQRST';
 
+const MAX_NODES = 50000;
+let nodeCount = 0;
+
 /** Parse SGF text into a tree of nodes */
 export function parseSgf(text: string): SgfParseResult {
-  const normalized = text.replace(/\r?\n/g, '');
+  // Strip BOM and normalize line endings
+  let normalized = text.replace(/^\uFEFF/, '').replace(/\r?\n/g, '');
+
+  // Find the first '(' — skip any preamble
+  const firstParen = normalized.indexOf('(');
+  if (firstParen === -1) throw new Error('Invalid SGF: no root node found');
+  if (firstParen > 0) normalized = normalized.slice(firstParen);
 
   let pos = 0;
 
@@ -94,23 +103,14 @@ export function parseSgf(text: string): SgfParseResult {
         if (normalized[pos] === ';') {
           children.push(parseNode());
         }
-        while (pos < normalized.length) {
-          skipWhitespace();
-          if (normalized[pos] === ')') {
-            pos++;
-            break;
-          }
-          if (normalized[pos] === ';') {
-            children.push(parseNode());
-          } else if (normalized[pos] === '(') {
-            pos++;
-            if (normalized[pos] === ';') {
-              children.push(parseNode());
-            }
-          } else {
-            break;
-          }
+        // Skip to matching ')' using depth counter
+        let depth = 1;
+        while (pos < normalized.length && depth > 0) {
+          if (normalized[pos] === '(') depth++;
+          else if (normalized[pos] === ')') depth--;
+          if (depth > 0) pos++;
         }
+        if (pos < normalized.length) pos++; // Skip the matching ')'
       } else if (ch === ';') {
         children.push(parseNode());
       } else {
@@ -189,7 +189,10 @@ function parseLZProperty(
       }
     }
 
-    if (parts.length < 2) return null;
+    if (parts.length < 2) {
+      console.warn('[sgf-parser] LZ property format not recognized:', lz.substring(0, 200));
+      return null;
+    }
 
     // Line 1: KataGo <winrate> <visits> <scoreMean> <scoreStdev>
     const line1Parts = parts[0].trim().split(/\s+/);
@@ -272,6 +275,9 @@ function sgfNodeToMoveNode(
   nextColor: 'black' | 'white',
   analysisCache: AnalysisCache,
 ): MoveNode | null {
+  nodeCount++;
+  if (nodeCount > MAX_NODES) throw new Error('SGF too large: exceeds 50000 nodes');
+
   const blackMove = sgfNode.properties.B?.[0];
   const whiteMove = sgfNode.properties.W?.[0];
   const moveCoord = blackMove || whiteMove;
@@ -366,6 +372,7 @@ export function sgfToMoveTree(sgfText: string): {
   playerWhite: string;
 } | null {
   try {
+    nodeCount = 0;
     const { root, boardSize, komi, rules, playerBlack, playerWhite } = parseSgf(sgfText);
 
     const rootNode: MoveNode = {

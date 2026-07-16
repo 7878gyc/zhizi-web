@@ -103,7 +103,7 @@ export function gtpToCoord(gtp: string, boardSize: number = 19): { row: number; 
 
 // --- SGF coordinate conversion ---
 export function sgfToCoord(sgf: string, boardSize: number = 19): { row: number; col: number } {
-  // SGF: 'a' = 0, 'b' = 1, ... skip 'i', 's' = 18
+  // SGF: 'a' = 0, 'b' = 1, ... 's' = 18（连续编码，不跳过任何字母）
   const col = sgf.charCodeAt(0) - 'a'.charCodeAt(0);
   const row = sgf.charCodeAt(1) - 'a'.charCodeAt(0);
   // Convert to our coordinate system (row 0 = top)
@@ -154,8 +154,13 @@ function parseInfoBlock(block: string): Partial<AnalysisInfo> {
       break;
     }
     if (!SCALAR_KEYS.has(key)) {
-      // Unknown key; stop parsing this block
-      break;
+      // Unknown key: skip its value and continue parsing
+      if (tokens[i + 1] !== undefined && !['pv', 'info'].includes(tokens[i + 1])) {
+        i += 2;
+      } else {
+        i++;
+      }
+      continue;
     }
     const val = tokens[i + 1];
     if (val === undefined) break;
@@ -220,9 +225,11 @@ export function getPathToNode(root: MoveNode, targetId: string): MoveNode[] {
   return [];
 }
 
+let nodeCounter = 0;
+
 /** Generate a unique ID for a new node */
 export function generateNodeId(): string {
-  return `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return `node_${Date.now()}_${++nodeCounter}_${Math.random().toString(36).slice(2, 5)}`;
 }
 
 /** Create the root MoveNode (empty board) */

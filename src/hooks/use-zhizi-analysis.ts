@@ -19,6 +19,7 @@ interface UseZhiziAnalysisReturn {
   disconnect: () => void;
   sendGtpCommand: (cmd: string) => void;
   syncAndAnalyze: (params: SyncParams) => void;
+  stopAnalysis: () => void;
 }
 
 export interface SyncParams {
@@ -33,6 +34,7 @@ export interface SyncParams {
 
 export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const socketRef = useRef<Socket | null>(null);
+  const mountedRef = useRef(true);
   const [analysisData, setAnalysisData] = useState<AnalysisInfo[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -75,6 +77,15 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   }, []);
 
   const connect = useCallback(async (config: AiConfig) => {
+    // Force disconnect old socket before creating a new one
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setAnalysisData([]);
+    setCurrentWinrate(null);
+    setLogs([]);
+
     const token = getToken();
     if (!token) {
       setError('未登录，请先登录');
@@ -99,6 +110,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       });
 
       const data = await resp.json();
+      if (!mountedRef.current) return;
       if (!resp.ok || !data.token || !data.socketIOURL) {
         setError(data.error || data.key || data.message || '获取 WebSocket 令牌失败');
         setIsConnecting(false);
@@ -119,6 +131,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
 
       socket.on('connect', () => {
         setIsConnected(true);
+        setError(null);
       });
 
       socket.on('ready', () => {
@@ -189,6 +202,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
 
   const syncAndAnalyze = useCallback((params: SyncParams) => {
     if (!socketRef.current?.connected) return;
+    if (!aiReady) return;
 
     setIsAnalyzing(true);
     setAnalysisData([]);
@@ -217,12 +231,21 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     for (const cmd of commands) {
       socketRef.current.emit('stdin', cmd + '\n');
     }
+  }, [aiReady]);
+
+  const stopAnalysis = useCallback(() => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('stdin', 'stop\n');
+    }
+    setIsAnalyzing(false);
   }, []);
 
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (socketRef.current) {
         socketRef.current.disconnect();
+        socketRef.current = null;
       }
     };
   }, []);
@@ -240,5 +263,6 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     disconnect,
     sendGtpCommand,
     syncAndAnalyze,
+    stopAnalysis,
   };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import type { GoStone, MoveNode } from '@/lib/go-types';
-import { coordToGTP, findNode, getPathToNode, generateNodeId, createRootNode } from '@/lib/go-types';
+import { coordToGTP, findNode, getPathToNode, generateNodeId, createRootNode, gtpToCoord } from '@/lib/go-types';
 
 interface UseGoGameReturn {
   board: ('black' | 'white' | null)[][];
@@ -94,11 +94,7 @@ function replayBoardFromPath(
     const node = path[i];
     if (node.move === 'root' || !node.color) continue;
 
-    const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-    const letter = node.move[0].toUpperCase();
-    const number = parseInt(node.move.slice(1), 10);
-    const row = boardSize - number;
-    const col = COL_LETTERS.indexOf(letter);
+    const { row, col } = gtpToCoord(node.move, boardSize);
 
     if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) continue;
 
@@ -174,11 +170,7 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
       // Update lastMove
       const lastNode = path[path.length - 1];
       if (lastNode.move !== 'root' && lastNode.color) {
-        const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-        const letter = lastNode.move[0].toUpperCase();
-        const number = parseInt(lastNode.move.slice(1), 10);
-        const row = boardSize - number;
-        const col = COL_LETTERS.indexOf(letter);
+        const { row, col } = gtpToCoord(lastNode.move, boardSize);
         setLastMove({ row, col });
       } else {
         setLastMove(null);
@@ -285,18 +277,18 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
   const deleteNode = useCallback(
     (nodeId: string) => {
       if (nodeId === 'root') return;
+
+      // Capture parent ID before removing the node
+      const deletedNode = findNode(moveTree, nodeId);
+      const fallbackParentId = deletedNode?.parentId ?? 'root';
+
       const newTree = removeNodeFromParent(moveTree, nodeId);
       setMoveTree(newTree);
 
       // If we deleted the current node or an ancestor, go to parent
       const stillExists = findNode(newTree, currentNodeId);
       if (!stillExists) {
-        const deletedNode = findNode(moveTree, nodeId);
-        if (deletedNode?.parentId) {
-          navigateToNode(deletedNode.parentId, newTree);
-        } else {
-          navigateToNode('root', newTree);
-        }
+        navigateToNode(fallbackParentId, newTree);
       }
     },
     [moveTree, currentNodeId, navigateToNode]
@@ -367,13 +359,16 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
 
       const currentNode = findNode(tree, nodeId);
 
+      // Guard: skip if node not found (abnormal scenario) or is root node
+      if (!currentNode || currentNode.move === 'root') return;
+
       // Convert to Black's perspective: engine reports winrate from the
       // CURRENT player's view. If Black just moved (color='black'),
       // current player is White → flip to 1 - winrate.
-      const blackWinrate = currentNode?.color === 'black' ? 1 - winrate : winrate;
+      const blackWinrate = currentNode.color === 'black' ? 1 - winrate : winrate;
 
       // Skip if the same value is already stored
-      if (currentNode?.winrate === blackWinrate) return;
+      if (currentNode.winrate === blackWinrate) return;
 
       const updateWinrate = (node: MoveNode): MoveNode => {
         if (node.id === nodeId) {
