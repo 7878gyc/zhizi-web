@@ -2,16 +2,20 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Monitor, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { saveToken } from '@/lib/auth';
 
+const MODE_STORAGE_KEY = 'zhizi_analysis_mode';
+
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
   const [authMode, setAuthMode] = useState<'password' | 'code'>('password');
+  const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>('local');
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
@@ -65,6 +69,7 @@ export default function LoginPage() {
 
       if (data.token) {
         saveToken(data.token);
+        localStorage.setItem(MODE_STORAGE_KEY, analysisMode);
         router.push('/');
       } else {
         setError('登录返回异常，未获取到令牌');
@@ -203,6 +208,32 @@ export default function LoginPage() {
               }`}
             >
               验证码登录
+            </button>
+          </div>
+
+          {/* Analysis mode tabs */}
+          <div className="flex mb-6 bg-[#1A1A2E]/50 rounded-lg p-1">
+            <button
+              onClick={() => setAnalysisMode('local')}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                analysisMode === 'local'
+                  ? 'bg-[#E8B931] text-[#1A1A2E]'
+                  : 'text-[#8B8FA3] hover:text-white'
+              }`}
+            >
+              <Monitor className="w-4 h-4" />
+              本地分析
+            </button>
+            <button
+              onClick={() => setAnalysisMode('remote')}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                analysisMode === 'remote'
+                  ? 'bg-[#E8B931] text-[#1A1A2E]'
+                  : 'text-[#8B8FA3] hover:text-white'
+              }`}
+            >
+              <Server className="w-4 h-4" />
+              远程算力
             </button>
           </div>
 

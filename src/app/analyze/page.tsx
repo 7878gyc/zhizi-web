@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil, Monitor, Server } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -11,7 +11,6 @@ import WinrateChart from '@/components/winrate-chart';
 import KataGoLogViewer from '@/components/katago-log-viewer';
 import HawkEyePanel from '@/components/hawk-eye-panel';
 import RemoteEnginePanel from '@/components/remote-engine-panel';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
@@ -51,7 +50,15 @@ export default function AnalyzePage() {
   const [foxwqLoading, setFoxwqLoading] = useState(false);
   const [foxwqError, setFoxwqError] = useState('');
   const [userInfo, setUserInfo] = useState<{ phone?: string; email?: string; username?: string } | null>(null);
+
+  // Read analysis mode from localStorage (set by login page)
   const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>('local');
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('zhizi_analysis_mode');
+      if (saved === 'remote') setAnalysisMode('remote');
+    }
+  }, []);
 
   // Check auth
   useEffect(() => {
@@ -1167,23 +1174,17 @@ export default function AnalyzePage() {
 
         {/* Right: Analysis panel */}
         <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
-          {/* Mode toggle: 本地分析 / 远程算力 */}
-          <Tabs
-            value={analysisMode}
-            onValueChange={(v) => setAnalysisMode(v as 'local' | 'remote')}
-            className="flex flex-col gap-0"
-          >
-            <TabsList className="bg-[#0A0A1A] w-full">
-              <TabsTrigger value="local" className="flex items-center gap-1 text-xs data-[state=active]:bg-[#16213E] data-[state=active]:text-[#E8B931]">
-                <Monitor className="w-3.5 h-3.5" />
-                本地分析
-              </TabsTrigger>
-              <TabsTrigger value="remote" className="flex items-center gap-1 text-xs data-[state=active]:bg-[#16213E] data-[state=active]:text-[#E8B931]">
-                <Server className="w-3.5 h-3.5" />
-                远程算力
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Mode indicator badge */}
+          <div className="flex items-center justify-between">
+            <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">当前模式</span>
+            <span className={`text-xs px-2 py-0.5 rounded border ${
+              analysisMode === 'remote'
+                ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
+                : 'bg-[#E8B931]/15 text-[#E8B931] border-[#E8B931]/30'
+            }`}>
+              {analysisMode === 'remote' ? '远程算力' : '本地分析'}
+            </span>
+          </div>
 
           {/* AI Config — only shown in local analysis mode */}
           {analysisMode === 'local' && (
