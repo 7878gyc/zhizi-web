@@ -60,8 +60,9 @@ export default function AnalyzePage() {
     }
   }, []);
 
-  // Check auth
+  // Check auth — skip for remote SSH mode
   useEffect(() => {
+    if (analysisMode === 'remote') return;
     if (!getToken()) {
       router.replace('/login');
       return;
@@ -73,7 +74,7 @@ export default function AnalyzePage() {
     }
     // Fetch fresh user info
     fetchUserInfo();
-  }, [router]);
+  }, [router, analysisMode]);
 
   const fetchUserInfo = useCallback(async () => {
     const token = getToken();

@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useRemoteEngine, type SshTaskParams, type LogEntry } from '@/hooks/use-remote-engine';
 
+const SSH_PREFIX = 'zhizi_ssh_';
+
 interface RemoteEnginePanelProps {
   isActive: boolean;
 }
@@ -21,8 +23,26 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
   const [command, setCommand] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const autoStartedRef = useRef(false);
 
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  // On mount: read SSH config from sessionStorage (set by login page)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storage = window.sessionStorage;
+    const savedHost = storage.getItem(`${SSH_PREFIX}host`);
+    if (!savedHost) return;
+
+    setHost(savedHost);
+    setPort(parseInt(storage.getItem(`${SSH_PREFIX}port`) || '22', 10));
+    setUsername(storage.getItem(`${SSH_PREFIX}username`) || '');
+    setCommand(storage.getItem(`${SSH_PREFIX}command`) || '');
+    const savedPwd = storage.getItem(`${SSH_PREFIX}password`);
+    if (savedPwd) setPassword(savedPwd);
+    const savedKey = storage.getItem(`${SSH_PREFIX}private_key`);
+    if (savedKey) setPrivateKey(savedKey);
+  }, []);
 
   // Auto-connect/disconnect when panel becomes active/inactive
   useEffect(() => {
@@ -30,11 +50,48 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
       connect();
     } else {
       disconnect();
+      autoStartedRef.current = false;
     }
     return () => {
       disconnect();
+      autoStartedRef.current = false;
     };
-  }, [isActive, connect, disconnect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
+
+  // Auto-submit task when connected and config was loaded from sessionStorage
+  useEffect(() => {
+    if (!isConnected || autoStartedRef.current) return;
+    if (!host.trim() || !username.trim() || !command.trim()) return;
+
+    autoStartedRef.current = true;
+
+    // Delay slightly so the socket is fully ready
+    const timer = setTimeout(() => {
+      const params: SshTaskParams = {
+        host: host.trim(),
+        port,
+        username: username.trim(),
+        command: command.trim(),
+      };
+      if (password) params.password = password;
+      if (privateKey) params.privateKey = privateKey;
+      startTask(params);
+
+      // Clear sensitive data from sessionStorage
+      if (typeof window !== 'undefined') {
+        const storage = window.sessionStorage;
+        storage.removeItem(`${SSH_PREFIX}password`);
+        storage.removeItem(`${SSH_PREFIX}private_key`);
+        // Also clean local state
+        setPassword('');
+        setPrivateKey('');
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
 
   // Auto-scroll logs to bottom
   useEffect(() => {
@@ -46,9 +103,7 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (!isConnected) {
-        return;
-      }
+      if (!isConnected) return;
 
       const params: SshTaskParams = {
         host: host.trim(),
@@ -56,24 +111,17 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
         username: username.trim(),
         command: command.trim(),
       };
-
-      if (password) {
-        params.password = password;
-      }
-      if (privateKey) {
-        params.privateKey = privateKey;
-      }
+      if (password) params.password = password;
+      if (privateKey) params.privateKey = privateKey;
 
       startTask(params);
-      // Do NOT persist password or key after submit — they are in local state only
+      autoStartedRef.current = true;
     },
     [isConnected, host, port, username, password, privateKey, command, startTask],
   );
 
   const canSubmit =
     isConnected && !isRunning && host.trim() && username.trim() && command.trim();
-
-  const logText = logs.map((entry) => entry.data).join('');
 
   const getLogLineClass = (entry: LogEntry): string => {
     switch (entry.type) {
@@ -111,7 +159,7 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
       <form onSubmit={handleSubmit} className="space-y-2">
         {/* Host */}
         <div className="space-y-1">
-          <Label className="text-[#8B8FA3] text-xs">主机 *</Label>
+          <Label className="text-[#8B8FA3] text-xs">主机</Label>
           <input
             type="text"
             value={host}
@@ -138,7 +186,7 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
 
         {/* Username */}
         <div className="space-y-1">
-          <Label className="text-[#8B8FA3] text-xs">用户名 *</Label>
+          <Label className="text-[#8B8FA3] text-xs">用户名</Label>
           <input
             type="text"
             value={username}
@@ -205,7 +253,7 @@ export default function RemoteEnginePanel({ isActive }: RemoteEnginePanelProps) 
 
         {/* Command */}
         <div className="space-y-1">
-          <Label className="text-[#8B8FA3] text-xs">启动命令 *</Label>
+          <Label className="text-[#8B8FA3] text-xs">启动命令</Label>
           <textarea
             value={command}
             onChange={(e) => setCommand(e.target.value)}
