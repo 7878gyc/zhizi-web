@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil } from 'lucide-react';
+import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil, Monitor, Server } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -10,6 +10,8 @@ import MoveTree from '@/components/move-tree';
 import WinrateChart from '@/components/winrate-chart';
 import KataGoLogViewer from '@/components/katago-log-viewer';
 import HawkEyePanel from '@/components/hawk-eye-panel';
+import RemoteEnginePanel from '@/components/remote-engine-panel';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
@@ -49,6 +51,7 @@ export default function AnalyzePage() {
   const [foxwqLoading, setFoxwqLoading] = useState(false);
   const [foxwqError, setFoxwqError] = useState('');
   const [userInfo, setUserInfo] = useState<{ phone?: string; email?: string; username?: string } | null>(null);
+  const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>('local');
 
   // Check auth
   useEffect(() => {
@@ -1164,19 +1167,44 @@ export default function AnalyzePage() {
 
         {/* Right: Analysis panel */}
         <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
-          {/* AI Config */}
-          <AiConfigPanel
-            selectedConfig={selectedConfig}
-            onSelectConfig={setSelectedConfig}
-            isConnected={isConnected}
-            isConnecting={isConnecting}
-            isAnalyzing={isAnalyzing}
-            onStartAnalysis={handleStartAnalysis}
-            onStopAnalysis={handleStopAnalysis}
-            isAutoAnalyzing={isAutoAnalyzing}
-            onToggleAutoAnalyze={handleToggleAutoAnalyze}
-            error={analysisError}
-          />
+          {/* Mode toggle: 本地分析 / 远程算力 */}
+          <Tabs
+            value={analysisMode}
+            onValueChange={(v) => setAnalysisMode(v as 'local' | 'remote')}
+            className="flex flex-col gap-0"
+          >
+            <TabsList className="bg-[#0A0A1A] w-full">
+              <TabsTrigger value="local" className="flex items-center gap-1 text-xs data-[state=active]:bg-[#16213E] data-[state=active]:text-[#E8B931]">
+                <Monitor className="w-3.5 h-3.5" />
+                本地分析
+              </TabsTrigger>
+              <TabsTrigger value="remote" className="flex items-center gap-1 text-xs data-[state=active]:bg-[#16213E] data-[state=active]:text-[#E8B931]">
+                <Server className="w-3.5 h-3.5" />
+                远程算力
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* AI Config — only shown in local analysis mode */}
+          {analysisMode === 'local' && (
+            <AiConfigPanel
+              selectedConfig={selectedConfig}
+              onSelectConfig={setSelectedConfig}
+              isConnected={isConnected}
+              isConnecting={isConnecting}
+              isAnalyzing={isAnalyzing}
+              onStartAnalysis={handleStartAnalysis}
+              onStopAnalysis={handleStopAnalysis}
+              isAutoAnalyzing={isAutoAnalyzing}
+              onToggleAutoAnalyze={handleToggleAutoAnalyze}
+              error={analysisError}
+            />
+          )}
+
+          {/* Remote Engine Panel — only shown in remote compute mode */}
+          {analysisMode === 'remote' && (
+            <RemoteEnginePanel isActive={analysisMode === 'remote'} />
+          )}
 
           {/* Save SGF */}
           <div className="relative" ref={sgfMenuRef}>
