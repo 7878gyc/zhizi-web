@@ -32,6 +32,9 @@ app.prepare().then(() => {
     transports: ['websocket', 'polling'],
   });
 
+  // Track active SSH connections by room (socket.id)
+  const connectionsMap = new Map();
+
   io.on('connection', (socket) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
 
@@ -62,20 +65,31 @@ app.prepare().then(() => {
         return;
       }
 
+      // If there's already an active connection for this room, terminate it first
+      const existing = connectionsMap.get(room);
+      if (existing) {
+        existing.cleanup();
+        connectionsMap.delete(room);
+      }
+
       const conn = new Client();
       let sshConnected = false;
       let idleTimer = null;
       let lastOutputTime = Date.now();
+      let stderrClosed = false;
+      let streamClosed = false;
 
-      // Capture sensitive data into local bindings, then null them immediately after use
+      // Capture sensitive data into local bindings
       let pwd = password && typeof password === 'string' ? password : null;
       let key = privateKey && typeof privateKey === 'string' ? privateKey : null;
 
       const cleanup = () => {
+        // Clear idle timer
         if (idleTimer) {
           clearTimeout(idleTimer);
           idleTimer = null;
         }
+        // End SSH connection
         if (sshConnected) {
           try {
             conn.end();
@@ -87,6 +101,10 @@ app.prepare().then(() => {
         // Erase sensitive data from memory
         pwd = null;
         key = null;
+        // Remove from tracking map
+        connectionsMap.delete(room);
+        // Leave the Socket.IO room to release server-side resources
+        socket.leave(room);
       };
 
       const resetIdleTimer = () => {
@@ -110,8 +128,13 @@ app.prepare().then(() => {
           }
 
           stream.on('close', (code, signal) => {
-            io.to(room).emit('task-end', { exitCode: code, signal: signal || undefined });
-            cleanup();
+            streamClosed = true;
+            // Only emit task-end if stderr has also been handled
+            // If stderr also closed (or hasn't opened), emit now; otherwise wait for stderr
+            if (stderrClosed) {
+              io.to(room).emit('task-end', { exitCode: code, signal: signal || undefined });
+              cleanup();
+            }
           });
 
           stream.on('data', (data) => {
@@ -130,6 +153,22 @@ app.prepare().then(() => {
             resetIdleTimer();
           });
 
+          stream.stderr.on('close', () => {
+            stderrClosed = true;
+            // If the main stream already closed, emit task-end now
+            if (streamClosed) {
+              io.to(room).emit('task-end', { exitCode: undefined });
+              cleanup();
+            }
+          });
+
+          stream.stderr.on('error', (err) => {
+            io.to(room).emit('task-output', {
+              type: 'stderr',
+              data: `\n[stderr 错误] ${err.message}\n`,
+            });
+          });
+
           resetIdleTimer();
         });
       });
@@ -139,7 +178,7 @@ app.prepare().then(() => {
         cleanup();
       });
 
-      // Build connect config
+      // Build connect config — ensure values are non-empty strings before assigning
       const connectConfig = {
         host,
         port: typeof sshPort === 'number' && sshPort > 0 ? sshPort : 22,
@@ -147,12 +186,20 @@ app.prepare().then(() => {
         readyTimeout: sshConnectTimeout,
       };
 
-      if (pwd) {
+      if (pwd && pwd.trim()) {
         connectConfig.password = pwd;
       }
-      if (key) {
+      if (key && key.trim()) {
         connectConfig.privateKey = key;
       }
+
+      // Immediately wipe sensitive data from memory BEFORE connect()
+      // connectConfig already holds the values for ssh2 internally
+      pwd = null;
+      key = null;
+
+      // Register connection for potential stop-ssh-task calls
+      connectionsMap.set(room, { conn, cleanup });
 
       try {
         conn.connect(connectConfig);
@@ -161,22 +208,25 @@ app.prepare().then(() => {
           error: `SSH 连接异常: ${err instanceof Error ? err.message : String(err)}`,
         });
         cleanup();
-        return;
       }
-
-      // Immediately wipe sensitive material from server-side memory
-      pwd = null;
-      key = null;
     });
 
     socket.on('stop-ssh-task', () => {
-      // Client requests task termination — sent as acknowledgement only
-      // Actual cleanup happens on the transport-level close/disconnect
+      const entry = connectionsMap.get(room);
+      if (entry) {
+        // Actually terminate the SSH connection
+        entry.cleanup();
+      }
       io.to(room).emit('task-end', { reason: 'user-stopped' });
     });
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.IO] Client disconnected: ${socket.id} (${reason})`);
+      // Clean up any active SSH connection for this room
+      const entry = connectionsMap.get(room);
+      if (entry) {
+        entry.cleanup();
+      }
     });
   });
 
