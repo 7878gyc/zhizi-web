@@ -213,10 +213,22 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
         return false;
       }
 
+      // Simple ko detection: if the previous move captured exactly one stone,
+      // and the current move would recapture at that same position, reject it.
+      const currentNode = findNode(moveTree, currentNodeId);
+      if (
+        capturedStones.length === 1 &&
+        currentNode?.capturedStones?.length === 1
+      ) {
+        const prevCapture = currentNode.capturedStones[0];
+        if (row === prevCapture.row && col === prevCapture.col) {
+          return false;
+        }
+      }
+
       const coord = coordToGTP(row, col, boardSize);
 
       // Check if this move already exists as a child of currentNode
-      const currentNode = findNode(moveTree, currentNodeId);
       if (currentNode) {
         const existingChild = currentNode.children.find(c => c.move === coord && c.color === color);
         if (existingChild) {

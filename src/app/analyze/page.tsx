@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward, Download, Cloud, Trash2, Pencil } from 'lucide-react';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -18,6 +17,14 @@ import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
 import { gtpToCoord } from '@/lib/go-types';
 import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
+
+import AnalyzeHeader from './_components/analyze-header';
+import BoardControls from './_components/board-controls';
+import FoxwqImportDialog from './_components/foxwq-import-dialog';
+import { CloudImportDialog, SaveSgfMenu } from './_components/cloud-save-menu';
+import { useAutoAnalyze } from './_hooks/use-auto-analyze';
+import { useAnalysisCache } from './_hooks/use-analysis-cache';
+import { useCloudRecords } from './_hooks/use-cloud-records';
 
 interface VariationMove {
   row: number;
@@ -40,18 +47,15 @@ export default function AnalyzePage() {
   const [hoverCoord, setHoverCoord] = useState<{ row: number; col: number } | null>(null);
   const sgfInputRef = useRef<HTMLInputElement>(null);
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
-  const autoAnalyzeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [variationMoves, setVariationMoves] = useState<VariationMove[] | null>(null);
   const [selectedMove, setSelectedMove] = useState<string | null>(null);
   const selectedMoveRef = useRef(selectedMove);
   selectedMoveRef.current = selectedMove;
-  const [foxwqUrl, setFoxwqUrl] = useState('');
-  const [showFoxwqDialog, setShowFoxwqDialog] = useState(false);
-  const [foxwqLoading, setFoxwqLoading] = useState(false);
-  const [foxwqError, setFoxwqError] = useState('');
   const [userInfo, setUserInfo] = useState<{ phone?: string; email?: string; username?: string } | null>(null);
+  const [playerBlack, setPlayerBlack] = useState('');
+  const [playerWhite, setPlayerWhite] = useState('');
 
-  // Read analysis mode from localStorage (set by login page)
+  // --- Analysis mode ---
   const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>('local');
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -60,19 +64,15 @@ export default function AnalyzePage() {
     }
   }, []);
 
-  // Check auth — skip for remote SSH mode
+  // --- Auth ---
   useEffect(() => {
     if (analysisMode === 'remote') return;
     if (!getToken()) {
       router.replace('/login');
       return;
     }
-    // Try to load cached user info
     const cached = getUser();
-    if (cached) {
-      setUserInfo(cached as { phone?: string; email?: string; username?: string });
-    }
-    // Fetch fresh user info
+    if (cached) setUserInfo(cached as { phone?: string; email?: string; username?: string });
     fetchUserInfo();
   }, [router, analysisMode]);
 
@@ -90,10 +90,11 @@ export default function AnalyzePage() {
         saveUser(info);
       }
     } catch {
-      // Ignore fetch errors
+      /* ignore */
     }
   }, []);
 
+  // --- Game state ---
   const {
     board,
     boardSize,
@@ -105,7 +106,7 @@ export default function AnalyzePage() {
     lastMove,
     gtpMoves,
     currentMoveNumber,
-    winrateHistory,
+    winrateHistory: _wrHist,
     placeStone,
     goToPrevMove,
     goToNextMove,
@@ -120,6 +121,7 @@ export default function AnalyzePage() {
     setCurrentWinrate,
   } = game;
 
+  // --- AI analysis ---
   const {
     analysisData,
     currentWinrate,
@@ -133,26 +135,21 @@ export default function AnalyzePage() {
     syncAndAnalyze,
   } = useZhiziAnalysis();
 
-  // Analysis cache: persist variations per position so switching back shows them instantly
-  const analysisCacheRef = useRef<Map<number, { data: AnalysisInfo[]; winrate: number | null }>>(new Map());
+  // --- Analysis display cache ---
   const [displayAnalysis, setDisplayAnalysis] = useState<AnalysisInfo[]>([]);
   const [displayWinrate, setDisplayWinrate] = useState<number | null>(null);
-  const analysisDataRef = useRef(analysisData);
-  analysisDataRef.current = analysisData;
-  const currentWinrateRef = useRef(currentWinrate);
-  currentWinrateRef.current = currentWinrate;
 
-  // Cache live analysis data whenever it arrives
-  useEffect(() => {
-    if (analysisData.length > 0) {
-      const idx = gtpMoves.length;
-      analysisCacheRef.current.set(idx, { data: analysisData, winrate: currentWinrate });
-      setDisplayAnalysis(analysisData);
-      setDisplayWinrate(currentWinrate);
-    }
-  }, [analysisData, currentWinrate, gtpMoves.length]);
+  const { cacheRef, analysisDataRef, currentWinrateRef, prevMoveCountRef } =
+    useAnalysisCache(
+      analysisData,
+      currentWinrate,
+      gtpMoves,
+      displayAnalysis,
+      setDisplayAnalysis,
+      setDisplayWinrate,
+    );
 
-  // Sync winrate to game state only when the value actually changes.
+  // --- Winrate sync ---
   const lastWinrateRef = useRef<number | null>(null);
   useEffect(() => {
     if (
@@ -164,11 +161,9 @@ export default function AnalyzePage() {
       lastWinrateRef.current = currentWinrate;
       setCurrentWinrate(currentWinrate);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentWinrate]);
+  }, [currentWinrate, setCurrentWinrate]);
 
-  // Sync and analyze whenever moves change and AI is connected
-  const prevMoveCountRef = useRef(-1);
+  // --- Sync and analyze on move change ---
   useEffect(() => {
     if (!isConnected) {
       prevMoveCountRef.current = -1;
@@ -177,21 +172,17 @@ export default function AnalyzePage() {
     if (gtpMoves.length === prevMoveCountRef.current) return;
 
     const oldIdx = prevMoveCountRef.current;
-
-    // Save current live data to cache for the position we're leaving
     if (oldIdx >= 0 && analysisDataRef.current.length > 0) {
-      analysisCacheRef.current.set(oldIdx, {
+      cacheRef.current.set(oldIdx, {
         data: analysisDataRef.current,
         winrate: currentWinrateRef.current,
       });
     }
-
     prevMoveCountRef.current = gtpMoves.length;
 
-    // Load cached data for new position instantly
     const newIdx = gtpMoves.length;
-    const cached = analysisCacheRef.current.get(newIdx);
-    if (cached && cached.data.length > 0) {
+    const cached = cacheRef.current.get(newIdx);
+    if (cached?.data.length) {
       setDisplayAnalysis(cached.data);
       setDisplayWinrate(cached.winrate);
     }
@@ -205,11 +196,11 @@ export default function AnalyzePage() {
     });
   }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
-  // Load cached analysis data when viewing the tree offline (e.g., after SGF import)
+  // --- Load cached analysis on tree navigation ---
   useEffect(() => {
     if (isConnected) return;
-    const cached = analysisCacheRef.current.get(currentMoveNumber);
-    if (cached && cached.data.length > 0) {
+    const cached = cacheRef.current.get(currentMoveNumber);
+    if (cached?.data.length) {
       setDisplayAnalysis(cached.data);
       setDisplayWinrate(cached.winrate);
     } else {
@@ -218,52 +209,45 @@ export default function AnalyzePage() {
     }
   }, [currentMoveNumber, isConnected]);
 
-  // Stable refs for callbacks used inside setInterval
-  const goToNextMoveRef = useRef(goToNextMove);
-  goToNextMoveRef.current = goToNextMove;
+  // --- Auto analyze ---
+  useAutoAnalyze(isAutoAnalyzing, isConnected, goToNextMove);
 
-  // Auto analyze: every 2 seconds go to next move
-  useEffect(() => {
-    if (isAutoAnalyzing && isConnected) {
-      autoAnalyzeRef.current = setInterval(() => {
-        goToNextMoveRef.current();
-      }, 2000);
-    } else {
-      if (autoAnalyzeRef.current) {
-        clearInterval(autoAnalyzeRef.current);
-        autoAnalyzeRef.current = null;
-      }
-    }
-    return () => {
-      if (autoAnalyzeRef.current) {
-        clearInterval(autoAnalyzeRef.current);
-      }
-    };
-  }, [isAutoAnalyzing, isConnected]);
-
-  // Clear variation preview when navigating to a different position
+  // --- Variation preview cleanup ---
   useEffect(() => {
     setSelectedMove(null);
     setVariationMoves(null);
   }, [currentNodeId]);
 
-  // Start analysis (manual)
+  // --- Cloud records ---
+  const {
+    records: cloudRecords,
+    loading: cloudLoading,
+    error: cloudError,
+    importingId: cloudImporting,
+    setImportingId: setCloudImporting,
+    fetchRecords: fetchCloudRecords,
+    deleteRecord: deleteCloudRecord,
+    setError: setCloudError,
+  } = useCloudRecords();
+
+  // --- Cloud/SGF save state ---
+  const [showSgfMenu, setShowSgfMenu] = useState(false);
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [showCloudImport, setShowCloudImport] = useState(false);
+  const [cloudSourceRecordId, setCloudSourceRecordId] = useState<string | null>(null);
+  const cloudSourceFileKeyRef = useRef<string | null>(null);
+  const sgfMenuRef = useRef<HTMLDivElement>(null);
+
+  // --- Handlers ---
+
   const handleStartAnalysis = useCallback(() => {
-    if (getToken()) {
-      connect(selectedConfig);
-    }
+    if (getToken()) connect(selectedConfig);
   }, [selectedConfig, connect]);
 
-  // Stop analysis
   const handleStopAnalysis = useCallback(() => {
     setIsAutoAnalyzing(false);
     disconnect();
   }, [disconnect]);
-
-  // Toggle auto analyze
-  const handleToggleAutoAnalyze = useCallback(() => {
-    setIsAutoAnalyzing(prev => !prev);
-  }, []);
 
   const handleCellClick = useCallback(
     (row: number, col: number) => {
@@ -271,7 +255,7 @@ export default function AnalyzePage() {
       setSelectedMove(null);
       setVariationMoves(null);
     },
-    [placeStone]
+    [placeStone],
   );
 
   const handleLogout = useCallback(() => {
@@ -281,450 +265,266 @@ export default function AnalyzePage() {
     router.replace('/login');
   }, [disconnect, router]);
 
-  const handleImportSgf = useCallback(async () => {
-    sgfInputRef.current?.click();
-  }, []);
-
-  const handleSgfFileChange = useCallback(
+  // --- SGF import: local file ---
+  const importSgfFromFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       const result = await readSgfFile(file);
       if (!result) {
         alert('SGF 文件解析失败，请检查文件格式');
         return;
       }
-
       disconnect();
-      if (result.boardSize !== boardSize) {
-        setBoardSize(result.boardSize);
-      }
+      if (result.boardSize !== boardSize) setBoardSize(result.boardSize);
       setKomi(result.komi);
       setRules(result.rules);
       setPlayerBlack(result.playerBlack);
       setPlayerWhite(result.playerWhite);
       setCloudSourceRecordId(null);
       cloudSourceFileKeyRef.current = null;
-      analysisCacheRef.current.clear();
+      cacheRef.current.clear();
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
-      // Populate analysis cache from imported SGF
-      result.analysisCache.forEach((value, key) => {
-        analysisCacheRef.current.set(key, value);
-      });
+      result.analysisCache.forEach((value, key) => cacheRef.current.set(key, value));
       loadFromTree(result.tree);
-      // Reset input so same file can be re-imported
       if (sgfInputRef.current) sgfInputRef.current.value = '';
     },
-    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree]
+    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree],
   );
 
-  // Foxwq import
-  const handleFoxwqImport = useCallback(async () => {
-    if (!foxwqUrl.trim()) {
-      setFoxwqError('请输入野狐围棋棋谱链接');
-      return;
-    }
-    setFoxwqLoading(true);
-    setFoxwqError('');
-    try {
+  // --- SGF import: Foxwq ---
+  const [showFoxwq, setShowFoxwq] = useState(false);
+
+  const handleFoxwqImport = useCallback(
+    async (url: string) => {
       const resp = await fetch('/api/foxwq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: foxwqUrl.trim() }),
+        body: JSON.stringify({ url }),
       });
       const data = await resp.json();
-      if (!resp.ok || data.error) {
-        setFoxwqError(data.error || '获取棋谱失败');
-        return;
-      }
-      if (!data.sgf) {
-        setFoxwqError('未获取到棋谱内容');
-        return;
-      }
-      // Parse the SGF content
-      const { parseSgfContent } = await import('@/lib/sgf-parser');
+      if (!resp.ok || data.error) throw new Error(data.error || '获取棋谱失败');
+      if (!data.sgf) throw new Error('未获取到棋谱内容');
+
       const result = parseSgfContent(data.sgf);
-      if (!result) {
-        setFoxwqError('棋谱格式解析失败');
-        return;
-      }
+      if (!result) throw new Error('棋谱格式解析失败');
+
       disconnect();
-      if (result.boardSize !== boardSize) {
-        setBoardSize(result.boardSize);
-      }
+      if (result.boardSize !== boardSize) setBoardSize(result.boardSize);
       setKomi(result.komi);
       setRules(result.rules);
       setPlayerBlack(result.playerBlack);
       setPlayerWhite(result.playerWhite);
       setCloudSourceRecordId(null);
       cloudSourceFileKeyRef.current = null;
-      analysisCacheRef.current.clear();
+      cacheRef.current.clear();
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
-      result.analysisCache.forEach((value, key) => {
-        analysisCacheRef.current.set(key, value);
-      });
+      result.analysisCache.forEach((value, key) => cacheRef.current.set(key, value));
       loadFromTree(result.tree);
-      setShowFoxwqDialog(false);
-      setFoxwqUrl('');
-    } catch (err: unknown) {
-      setFoxwqError(err instanceof Error ? err.message : '导入失败');
-    } finally {
-      setFoxwqLoading(false);
-    }
-  }, [foxwqUrl, disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree]);
-
-  // Variation display: when user clicks a suggestion in the table
-  const handleSelectMove = useCallback((info: AnalysisInfo) => {
-    // Toggle: if clicking the same selected move, cancel preview
-    if (selectedMoveRef.current === info.move) {
-      setSelectedMove(null);
-      setVariationMoves(null);
-      return;
-    }
-
-    if (!info.pv || info.pv.length === 0) {
-      setSelectedMove(null);
-      setVariationMoves(null);
-      return;
-    }
-
-    setSelectedMove(info.move);
-
-    // Build variation moves from pv (max 10 steps)
-    const moves: VariationMove[] = [];
-    let color: 'black' | 'white' = currentPlayer;
-    for (let i = 0; i < Math.min(info.pv.length, 10); i++) {
-      try {
-        const { row, col } = gtpToCoord(info.pv[i], boardSize);
-        moves.push({ row, col, color, moveNumber: i + 1 });
-        color = color === 'black' ? 'white' : 'black';
-      } catch {
-        break;
-      }
-    }
-    setVariationMoves(moves.length > 0 ? moves : null);
-  }, [currentPlayer, boardSize]);
-
-  // SGF save
-  const [showSgfMenu, setShowSgfMenu] = useState(false);
-  const [cloudSaving, setCloudSaving] = useState(false);
-  const [showCloudImport, setShowCloudImport] = useState(false);
-  const [cloudRecords, setCloudRecords] = useState<{ id: string; fileName: string; fileSize: number; createdAt: string; fileKey: string }[]>([]);
-  const [cloudLoading, setCloudLoading] = useState(false);
-  const [cloudImporting, setCloudImporting] = useState<string | null>(null);
-  const [cloudError, setCloudError] = useState('');
-  const sgfMenuRef = useRef<HTMLDivElement>(null);
-  // Player names extracted from imported SGF
-  const [playerBlack, setPlayerBlack] = useState('');
-  const [playerWhite, setPlayerWhite] = useState('');
-  const [editingPlayer, setEditingPlayer] = useState<'black' | 'white' | null>(null);
-  const [editValue, setEditValue] = useState('');
-  // Track cloud source for overwrite-on-save
-  const [cloudSourceRecordId, setCloudSourceRecordId] = useState<string | null>(null);
-  const cloudSourceFileKeyRef = useRef<string | null>(null);
-
-  // Compute full-game winrate history from moveTree main branch (fixed length, not path-dependent)
-  const fullWinrateHistory = useMemo(() => {
-    const history: (number | null)[] = [null]; // index 0 = root
-    let node: typeof moveTree | null = moveTree;
-    while (node) {
-      // Skip root node (already null at index 0)
-      if (node.moveNumber > 0) {
-        history.push(node.winrate ?? null);
-      }
-      node = node.children.length > 0 ? node.children[0] : null;
-    }
-    return history;
-  }, [moveTree]);
-
-  // Move number → node ID map for click-to-jump
-  const moveNumberToNodeId = useMemo(() => {
-    const map = new Map<number, string>();
-    let node: typeof moveTree | null = moveTree;
-    while (node) {
-      if (node.moveNumber > 0) {
-        map.set(node.moveNumber, node.id);
-      }
-      node = node.children.length > 0 ? node.children[0] : null;
-    }
-    return map;
-  }, [moveTree]);
-
-  // Click-to-jump from winrate chart
-  const handleWinrateClick = useCallback(
-    (moveNumber: number) => {
-      const nodeId = moveNumberToNodeId.get(moveNumber);
-      if (nodeId) {
-        jumpToNode(nodeId);
-      }
     },
-    [moveNumberToNodeId, jumpToNode],
+    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree],
   );
 
-  useEffect(() => {
-    if (!showSgfMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (sgfMenuRef.current && !sgfMenuRef.current.contains(e.target as Node)) {
-        setShowSgfMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showSgfMenu]);
+  // --- SGF import: Cloud ---
+  const handleOpenCloudImport = useCallback(() => {
+    setShowCloudImport(true);
+    setCloudError('');
+    fetchCloudRecords(getToken());
+  }, [fetchCloudRecords]);
 
-  const handleSaveSgf = useCallback((includeAnalysis: boolean) => {
-    setShowSgfMenu(false);
-    try {
-      const options = {
-        boardSize,
-        komi,
-        rules,
-        moveTree,
-        analysisCache: includeAnalysis ? analysisCacheRef.current : undefined,
-        includeAnalysis,
-        playerBlack: playerBlack || undefined,
-        playerWhite: playerWhite || undefined,
-      };
-      const content = includeAnalysis ? generateAnalyzedSGF(options) : generatePureSGF(options);
-      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const suffix = includeAnalysis ? '_analyzed' : '';
-      const baseName = playerBlack && playerWhite
-        ? `${playerBlack}vs${playerWhite}`
-        : `新盘面-${timestamp}`;
-      const fileName = `${baseName}${suffix}.sgf`;
-      downloadSgfFile(content, fileName);
-    } catch (err) {
-      console.error('SGF save error:', err);
-      alert('保存 SGF 失败');
-    }
-  }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite]);
+  const handleSelectCloudRecord = useCallback(
+    async (rec: { id: string; fileName: string; fileKey?: string }) => {
+      const { id } = rec;
+      setCloudImporting(id);
+      setCloudError('');
+      const token = getToken();
+
+      try {
+        const dlResp = await fetch(`/api/records/${id}/download`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const dlData = await dlResp.json();
+        if (!dlResp.ok) throw new Error(dlData.error || '获取下载链接失败');
+
+        const fileResp = await fetch(dlData.downloadUrl);
+        if (!fileResp.ok) throw new Error('下载棋谱文件失败');
+
+        const sgfText = await fileResp.text();
+        const parsed = parseSgfContent(sgfText);
+        if (!parsed) throw new Error('无法解析棋谱文件');
+
+        if (parsed.boardSize >= 1 && parsed.boardSize <= 19) setBoardSize(parsed.boardSize);
+        setKomi(parsed.komi);
+        if (parsed.rules) setRules(parsed.rules);
+        setPlayerBlack(parsed.playerBlack);
+        setPlayerWhite(parsed.playerWhite);
+        setCloudSourceRecordId(id);
+        cloudSourceFileKeyRef.current = rec.fileKey ?? null;
+        loadFromTree(parsed.tree);
+        if (parsed.analysisCache) cacheRef.current = parsed.analysisCache;
+
+        let lastNode = parsed.tree;
+        while (lastNode.children.length > 0) lastNode = lastNode.children[0];
+        jumpToNode(lastNode.id);
+
+        setShowCloudImport(false);
+      } catch (err) {
+        setCloudError(err instanceof Error ? err.message : '导入失败');
+      } finally {
+        setCloudImporting(null);
+      }
+    },
+    [setBoardSize, setKomi, setRules, loadFromTree, jumpToNode],
+  );
+
+  const handleDeleteCloudRecord = useCallback(
+    (id: string, fileName: string) => {
+      deleteCloudRecord(id, fileName, getToken());
+      if (cloudSourceRecordId === id) {
+        setCloudSourceRecordId(null);
+        cloudSourceFileKeyRef.current = null;
+      }
+    },
+    [deleteCloudRecord, cloudSourceRecordId],
+  );
+
+  // --- SGF save ---
+  const handleSaveSgf = useCallback(
+    (includeAnalysis: boolean) => {
+      setShowSgfMenu(false);
+      try {
+        const content = includeAnalysis
+          ? generateAnalyzedSGF({
+              boardSize,
+              komi,
+              rules,
+              moveTree,
+              analysisCache: includeAnalysis ? cacheRef.current : undefined,
+              includeAnalysis,
+              playerBlack: playerBlack || undefined,
+              playerWhite: playerWhite || undefined,
+            })
+          : generatePureSGF({
+              boardSize,
+              komi,
+              rules,
+              moveTree,
+              playerBlack: playerBlack || undefined,
+              playerWhite: playerWhite || undefined,
+            });
+        const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const baseName =
+          playerBlack && playerWhite ? `${playerBlack}vs${playerWhite}` : `新盘面-${timestamp}`;
+        downloadSgfFile(content, `${baseName}${includeAnalysis ? '_analyzed' : ''}.sgf`);
+      } catch {
+        alert('保存 SGF 失败');
+      }
+    },
+    [boardSize, komi, rules, moveTree, playerBlack, playerWhite],
+  );
 
   const handleSaveToCloud = useCallback(async () => {
     setShowSgfMenu(false);
     setCloudSaving(true);
     try {
-      const options = {
+      const content = generateAnalyzedSGF({
         boardSize,
         komi,
         rules,
         moveTree,
-        analysisCache: analysisCacheRef.current,
+        analysisCache: cacheRef.current,
         includeAnalysis: true,
         playerBlack: playerBlack || undefined,
         playerWhite: playerWhite || undefined,
-      };
-      const content = generateAnalyzedSGF(options);
+      });
       const blob = new Blob([content], { type: 'application/x-go-sgf' });
-
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const baseName = playerBlack && playerWhite
-        ? `${playerBlack}vs${playerWhite}`
-        : `新盘面-${timestamp}`;
+      const baseName =
+        playerBlack && playerWhite ? `${playerBlack}vs${playerWhite}` : `新盘面-${timestamp}`;
       const fileName = `${baseName}.sgf`;
-
       const token = getToken();
-      const isOverwrite = cloudSourceRecordId !== null && cloudSourceFileKeyRef.current !== null;
+      const isOverwrite =
+        cloudSourceRecordId !== null && cloudSourceFileKeyRef.current !== null;
 
-      // Step 1: Get pre-signed upload URL
       const uploadBody: Record<string, unknown> = { fileName, fileSize: blob.size };
-      if (isOverwrite) {
-        uploadBody.fileKey = cloudSourceFileKeyRef.current;
-      }
+      if (isOverwrite) uploadBody.fileKey = cloudSourceFileKeyRef.current;
+
       const uploadResp = await fetch('/api/upload', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(uploadBody),
       });
-
       if (!uploadResp.ok) {
         const err = await uploadResp.json();
         throw new Error(err.error || '获取上传链接失败');
       }
-
       const { uploadUrl, fileKey } = await uploadResp.json();
 
-      // Step 2: Upload directly to R2 from the browser
       const putResp = await fetch(uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/x-go-sgf' },
         body: blob,
       });
+      if (!putResp.ok) throw new Error('文件上传到云端失败');
 
-      if (!putResp.ok) {
-        throw new Error(
-          '文件上传到云端失败，请确认 R2 存储桶已配置 CORS（允许 PUT 方法）'
-        );
-      }
-
-      // Step 3: Save or update record in database
       if (isOverwrite) {
-        // Overwrite: update existing record's fileName
-        const patchResp = await fetch(`/api/records/${cloudSourceRecordId}`, {
+        await fetch(`/api/records/${cloudSourceRecordId}`, {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ fileName }),
         });
-
-        if (!patchResp.ok) {
-          const err = await patchResp.json();
-          throw new Error(err.error || '更新记录失败');
-        }
-        // Clear source tracking after overwrite
         setCloudSourceRecordId(null);
         cloudSourceFileKeyRef.current = null;
       } else {
-        // New save: create record
-        const saveResp = await fetch('/api/records', {
+        await fetch('/api/records', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
         });
-
-        if (!saveResp.ok) {
-          const err = await saveResp.json();
-          throw new Error(err.error || '保存记录失败');
-        }
       }
-
       alert('棋谱已保存到云棋谱库');
     } catch (err) {
-      console.error('Cloud save error:', err);
       alert(err instanceof Error ? err.message : '保存到云端失败');
     } finally {
       setCloudSaving(false);
     }
   }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite, cloudSourceRecordId]);
 
-  /** 打开云导入弹窗并加载棋谱列表 */
-  const handleOpenCloudImport = useCallback(() => {
-    setShowCloudImport(true);
-    setCloudError('');
-    setCloudLoading(true);
-    const token = getToken();
-    fetch('/api/records', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(resp => resp.json())
-      .then(data => {
-        if (data.error) {
-          setCloudError(data.error);
-        } else {
-          setCloudRecords(data.records || []);
+  // --- Variation selection ---
+  const handleSelectMove = useCallback(
+    (info: AnalysisInfo) => {
+      if (selectedMoveRef.current === info.move) {
+        setSelectedMove(null);
+        setVariationMoves(null);
+        return;
+      }
+      if (!info.pv || info.pv.length === 0) {
+        setSelectedMove(null);
+        setVariationMoves(null);
+        return;
+      }
+      setSelectedMove(info.move);
+      const moves: VariationMove[] = [];
+      let color: 'black' | 'white' = currentPlayer;
+      for (let i = 0; i < Math.min(info.pv.length, 10); i++) {
+        try {
+          const { row, col } = gtpToCoord(info.pv[i], boardSize);
+          moves.push({ row, col, color, moveNumber: i + 1 });
+          color = color === 'black' ? 'white' : 'black';
+        } catch {
+          break;
         }
-      })
-      .catch(() => setCloudError('网络错误'))
-      .finally(() => setCloudLoading(false));
-  }, []);
-
-  /** 从云端选择棋谱并下载导入 */
-  const handleSelectCloudRecord = useCallback(async (rec: { id: string; fileName: string; fileKey?: string }) => {
-    const id = rec.id;
-    setCloudImporting(id);
-    setCloudError('');
-    const token = getToken();
-
-    try {
-      // 1. 获取下载 URL
-      const dlResp = await fetch(`/api/records/${id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const dlData = await dlResp.json();
-      if (!dlResp.ok) {
-        throw new Error(dlData.error || '获取下载链接失败');
       }
+      setVariationMoves(moves.length > 0 ? moves : null);
+    },
+    [currentPlayer, boardSize],
+  );
 
-      // 2. 下载 SGF 内容
-      const fileResp = await fetch(dlData.downloadUrl);
-      if (!fileResp.ok) {
-        throw new Error('下载棋谱文件失败');
-      }
-      const sgfText = await fileResp.text();
-
-      // 3. 解析 SGF
-      const parsed = parseSgfContent(sgfText);
-      if (!parsed) {
-        throw new Error('无法解析棋谱文件');
-      }
-
-      // 4. 设置棋盘大小、贴目、规则
-      if (parsed.boardSize >= 1 && parsed.boardSize <= 19) {
-        setBoardSize(parsed.boardSize);
-      }
-      setKomi(parsed.komi);
-      if (parsed.rules) {
-        setRules(parsed.rules);
-      }
-      setPlayerBlack(parsed.playerBlack);
-      setPlayerWhite(parsed.playerWhite);
-      // Track cloud source for overwrite-on-save
-      setCloudSourceRecordId(id);
-      cloudSourceFileKeyRef.current = rec.fileKey ?? null;
-
-      // 5. 加载棋谱树
-      loadFromTree(parsed.tree);
-
-      // 6. 加载分析数据缓存
-      if (parsed.analysisCache) {
-        analysisCacheRef.current = parsed.analysisCache;
-      }
-
-      // 7. 跳转到最后一手
-      let lastNode = parsed.tree;
-      while (lastNode.children.length > 0) {
-        lastNode = lastNode.children[0];
-      }
-      jumpToNode(lastNode.id);
-
-      setShowCloudImport(false);
-    } catch (err) {
-      console.error('Cloud import error:', err);
-      setCloudError(err instanceof Error ? err.message : '导入失败');
-    } finally {
-      setCloudImporting(null);
-    }
-  }, [setBoardSize, setKomi, setRules, loadFromTree, jumpToNode]);
-
-  /** 删除云棋谱记录 */
-  const handleDeleteCloudRecord = useCallback(async (id: string, fileName: string) => {
-    if (!confirm(`确认删除「${fileName}」？此操作不可撤销。`)) return;
-
-    const token = getToken();
-    try {
-      const resp = await fetch(`/api/records/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.error || '删除失败');
-      }
-      // Remove from local list
-      setCloudRecords(prev => prev.filter(r => r.id !== id));
-      // If deleted record is the current cloud source, clear tracking
-      if (cloudSourceRecordId === id) {
-        setCloudSourceRecordId(null);
-        cloudSourceFileKeyRef.current = null;
-      }
-    } catch (err) {
-      console.error('Cloud delete error:', err);
-      alert(err instanceof Error ? err.message : '删除失败');
-    }
-  }, [cloudSourceRecordId]);
-
+  // --- Tree navigation ---
   const canGoPrev = currentNodeId !== 'root';
-  const currentNode = (() => {
+  const currentNode = useMemo(() => {
     const findInTree = (node: typeof moveTree): typeof moveTree | null => {
       if (node.id === currentNodeId) return node;
       for (const child of node.children) {
@@ -734,44 +534,36 @@ export default function AnalyzePage() {
       return null;
     };
     return findInTree(moveTree);
-  })();
+  }, [moveTree, currentNodeId]);
   const canGoNext = currentNode !== null && currentNode.children.length > 0;
 
-  // Stop auto-analyze when reaching a leaf node (no children)
   useEffect(() => {
-    if (isAutoAnalyzing && !canGoNext) {
-      setIsAutoAnalyzing(false);
-    }
+    if (isAutoAnalyzing && !canGoNext) setIsAutoAnalyzing(false);
   }, [isAutoAnalyzing, canGoNext]);
 
   const goToFirstMove = useCallback(() => {
-    const rootChildren = moveTree.children;
-    if (rootChildren.length > 0) {
-      jumpToNode(rootChildren[0].id);
-    } else {
-      jumpToNode('root');
-    }
+    const first = moveTree.children[0];
+    jumpToNode(first ? first.id : 'root');
   }, [moveTree, jumpToNode]);
 
   const goToLastMove = useCallback(() => {
     let node = moveTree;
-    while (node.children.length > 0) {
-      node = node.children[0];
-    }
+    while (node.children.length > 0) node = node.children[0];
     jumpToNode(node.id);
   }, [moveTree, jumpToNode]);
 
   const goBackward5 = useCallback(() => {
     let nodeId = currentNodeId;
     for (let i = 0; i < 5 && nodeId !== 'root'; i++) {
-      const node = (function find(tree: typeof moveTree): typeof moveTree | null {
+      const f = (tree: typeof moveTree): typeof moveTree | null => {
         if (tree.id === nodeId) return tree;
-        for (const child of tree.children) {
-          const found = find(child);
-          if (found) return found;
+        for (const c of tree.children) {
+          const r = f(c);
+          if (r) return r;
         }
         return null;
-      })(moveTree);
+      };
+      const node = f(moveTree);
       if (!node?.parentId) break;
       nodeId = node.parentId;
     }
@@ -781,254 +573,128 @@ export default function AnalyzePage() {
   const goForward5 = useCallback(() => {
     let nodeId = currentNodeId;
     for (let i = 0; i < 5; i++) {
-      const node = (function find(tree: typeof moveTree): typeof moveTree | null {
+      const f = (tree: typeof moveTree): typeof moveTree | null => {
         if (tree.id === nodeId) return tree;
-        for (const child of tree.children) {
-          const found = find(child);
-          if (found) return found;
+        for (const c of tree.children) {
+          const r = f(c);
+          if (r) return r;
         }
         return null;
-      })(moveTree);
+      };
+      const node = f(moveTree);
       if (!node || node.children.length === 0) break;
       nodeId = node.children[0].id;
     }
     jumpToNode(nodeId);
   }, [moveTree, currentNodeId, jumpToNode]);
 
-  // Display name for user
+  // --- Winrate chart ---
+  const fullWinrateHistory = useMemo(() => {
+    const history: (number | null)[] = [null];
+    let node: typeof moveTree | null = moveTree;
+    while (node) {
+      if (node.moveNumber > 0) history.push(node.winrate ?? null);
+      node = node.children.length > 0 ? node.children[0] : null;
+    }
+    return history;
+  }, [moveTree]);
+
+  const moveNumberToNodeId = useMemo(() => {
+    const map = new Map<number, string>();
+    let node: typeof moveTree | null = moveTree;
+    while (node) {
+      if (node.moveNumber > 0) map.set(node.moveNumber, node.id);
+      node = node.children.length > 0 ? node.children[0] : null;
+    }
+    return map;
+  }, [moveTree]);
+
+  const handleWinrateClick = useCallback(
+    (moveNumber: number) => {
+      const nodeId = moveNumberToNodeId.get(moveNumber);
+      if (nodeId) jumpToNode(nodeId);
+    },
+    [moveNumberToNodeId, jumpToNode],
+  );
+
+  // --- Display name ---
   const userDisplayName = userInfo
-    ? (userInfo.phone || userInfo.email || userInfo.username || '用户')
+    ? userInfo.phone || userInfo.email || userInfo.username || '用户'
     : '';
 
+  // --- Reset handler ---
+  const handleReset = useCallback(() => {
+    disconnect();
+    resetBoard();
+    setVariationMoves(null);
+    cacheRef.current.clear();
+    setDisplayAnalysis([]);
+    setDisplayWinrate(null);
+    setPlayerBlack('');
+    setPlayerWhite('');
+    setCloudSourceRecordId(null);
+    cloudSourceFileKeyRef.current = null;
+  }, [disconnect, resetBoard]);
+
+  // --- Board size change ---
+  const handleSetSize = useCallback(
+    (size: number) => {
+      if (size !== boardSize) {
+        disconnect();
+        setBoardSize(size);
+      }
+    },
+    [boardSize, disconnect, setBoardSize],
+  );
+
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <div className="min-h-screen bg-[#0F0F23] text-[#E0E0E0]">
-      {/* Top bar */}
-      <header className="h-12 bg-[#16213E]/80 border-b border-[#2A3A5C]/50 flex items-center justify-between px-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-bold text-[#E8B931] tracking-wide">智子围棋 AI</h1>
-          <span className="text-xs text-[#4A4A6A]">|</span>
-          <span className="text-xs text-[#8B8FA3]">
-            {boardSize}路 · {currentPlayer === 'black' ? '黑' : '白'}方落子
-            {isConnected && ' · AI已连接'}
-          </span>
-          {(playerBlack || playerWhite) && (
-            <>
-              <span className="text-xs text-[#4A4A6A]">|</span>
-              <span className="text-xs text-[#8B8FA3]">
-                {editingPlayer === 'black' ? (
-                  <input
-                    autoFocus
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    onBlur={() => {
-                      setPlayerBlack(editValue.trim());
-                      setEditingPlayer(null);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        setPlayerBlack(editValue.trim());
-                        setEditingPlayer(null);
-                      } else if (e.key === 'Escape') {
-                        setEditingPlayer(null);
-                      }
-                    }}
-                    className="w-24 px-1 py-0.5 text-xs bg-[#1A1A2E] border border-[#E8B931]/50 rounded text-[#E0E0E0] focus:outline-none"
-                  />
-                ) : (
-                  <button
-                    onClick={() => { setEditingPlayer('black'); setEditValue(playerBlack); }}
-                    className="text-[#4A9EFF] hover:text-[#6AB4FF] transition-colors inline-flex items-center gap-0.5"
-                    title="编辑黑方姓名"
-                  >
-                    {playerBlack}
-                    <Pencil className="w-2.5 h-2.5 text-[#4A4A6A]" />
-                  </button>
-                )}
-                <span className="text-[#8B8FA3]"> (黑)</span>
-                <span className="text-[#4A4A6A] mx-1">vs</span>
-                {editingPlayer === 'white' ? (
-                  <input
-                    autoFocus
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    onBlur={() => {
-                      setPlayerWhite(editValue.trim());
-                      setEditingPlayer(null);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        setPlayerWhite(editValue.trim());
-                        setEditingPlayer(null);
-                      } else if (e.key === 'Escape') {
-                        setEditingPlayer(null);
-                      }
-                    }}
-                    className="w-24 px-1 py-0.5 text-xs bg-[#1A1A2E] border border-[#E8B931]/50 rounded text-[#E0E0E0] focus:outline-none"
-                  />
-                ) : (
-                  <button
-                    onClick={() => { setEditingPlayer('white'); setEditValue(playerWhite); }}
-                    className="text-[#E0E0E0] hover:text-white transition-colors inline-flex items-center gap-0.5"
-                    title="编辑白方姓名"
-                  >
-                    {playerWhite}
-                    <Pencil className="w-2.5 h-2.5 text-[#4A4A6A]" />
-                  </button>
-                )}
-                <span className="text-[#8B8FA3]"> (白)</span>
-              </span>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {userDisplayName && (
-            <span className="text-xs text-[#8B8FA3]">{userDisplayName}</span>
-          )}
-          <button
-            onClick={handleImportSgf}
-            className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#C0C0C0] rounded transition-colors"
-          >
-            导入SGF
-          </button>
-          <input
-            ref={sgfInputRef}
-            type="file"
-            accept=".sgf"
-            className="hidden"
-            onChange={handleSgfFileChange}
-          />
-          <button
-            onClick={() => { setShowFoxwqDialog(true); setFoxwqError(''); }}
-            className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#C0C0C0] rounded transition-colors"
-          >
-            野狐导入
-          </button>
-          <button
-            onClick={handleOpenCloudImport}
-            className="px-2.5 py-1 text-xs bg-[#E8B931]/15 hover:bg-[#E8B931]/25 text-[#E8B931] rounded transition-colors"
-          >
-            云棋谱导入
-          </button>
-          <button
-            onClick={handleLogout}
-            className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
-          >
-            退出
-          </button>
-        </div>
-      </header>
+      <AnalyzeHeader
+        boardSize={boardSize}
+        currentPlayer={currentPlayer}
+        isConnected={isConnected}
+        playerBlack={playerBlack}
+        playerWhite={playerWhite}
+        userDisplayName={userDisplayName}
+        onSetBlack={setPlayerBlack}
+        onSetWhite={setPlayerWhite}
+        onImportSgf={() => sgfInputRef.current?.click()}
+        onFoxwqImport={() => setShowFoxwq(true)}
+        onCloudImport={handleOpenCloudImport}
+        onLogout={handleLogout}
+      />
 
-      {/* Foxwq import dialog */}
-      {showFoxwqDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-[#16213E] rounded-lg p-5 w-[400px] border border-[#2A3A5C] shadow-xl">
-            <h3 className="text-sm font-bold text-[#E8B931] mb-3">导入野狐围棋棋谱</h3>
-            <p className="text-xs text-[#8B8FA3] mb-3">粘贴野狐围棋分享链接，如：https://www.foxwq.com/... 或 https://share.foxwq.com/...</p>
-            <input
-              type="text"
-              value={foxwqUrl}
-              onChange={(e) => setFoxwqUrl(e.target.value)}
-              placeholder="粘贴棋谱链接..."
-              className="w-full px-3 py-2 text-sm bg-[#1A1A2E] border border-[#2A3A5C] rounded text-white placeholder-[#4A4A6A] focus:outline-none focus:border-[#E8B931]/50"
-            />
-            {foxwqError && (
-              <p className="text-xs text-[#FF6B6B] mt-2">{foxwqError}</p>
-            )}
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => { setShowFoxwqDialog(false); setFoxwqUrl(''); setFoxwqError(''); }}
-                className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleFoxwqImport}
-                disabled={foxwqLoading}
-                className="flex-1 px-3 py-2 text-sm bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30 hover:bg-[#E8B931]/30 rounded transition-colors disabled:opacity-50"
-              >
-                {foxwqLoading ? '导入中...' : '导入'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Hidden SGF file input */}
+      <input
+        ref={sgfInputRef}
+        type="file"
+        accept=".sgf"
+        className="hidden"
+        onChange={importSgfFromFile}
+      />
 
-      {/* Cloud import dialog */}
-      {showCloudImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-[#16213E] rounded-lg p-5 w-[420px] border border-[#2A3A5C] shadow-xl">
-            <h3 className="text-sm font-bold text-[#E8B931] mb-3">从云棋谱库导入</h3>
+      <FoxwqImportDialog
+        open={showFoxwq}
+        onClose={() => setShowFoxwq(false)}
+        onImport={handleFoxwqImport}
+      />
 
-            {cloudError && (
-              <p className="text-xs text-[#FF6B6B] mb-3">{cloudError}</p>
-            )}
-
-            {cloudLoading ? (
-              <div className="py-10 text-center text-[#8B8FA3] text-sm">加载中...</div>
-            ) : cloudRecords.length === 0 ? (
-              <div className="py-10 text-center text-[#8B8FA3] text-sm">
-                云端暂无棋谱，可先保存棋谱到云端
-              </div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto -mx-1">
-                {cloudRecords.map(rec => (
-                  <div
-                    key={rec.id}
-                    onClick={() => { if (!cloudImporting) handleSelectCloudRecord(rec); }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !cloudImporting) handleSelectCloudRecord(rec); }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[#2A3A5C]/50 rounded transition-colors ${
-                      cloudImporting !== null ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-[#E0E0E0] truncate">{rec.fileName}</p>
-                      <p className="text-xs text-[#8B8FA3] mt-0.5">
-                        {new Date(rec.createdAt).toLocaleString('zh-CN', {
-                          month: '2-digit', day: '2-digit',
-                          hour: '2-digit', minute: '2-digit',
-                        })}
-                        &nbsp;&middot;&nbsp;
-                        {rec.fileSize < 1024
-                          ? `${rec.fileSize} B`
-                          : rec.fileSize < 1024 * 1024
-                            ? `${(rec.fileSize / 1024).toFixed(1)} KB`
-                            : `${(rec.fileSize / (1024 * 1024)).toFixed(1)} MB`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-3 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteCloudRecord(rec.id, rec.fileName);
-                        }}
-                        disabled={cloudImporting !== null}
-                        className="p-1 rounded hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] transition-colors disabled:opacity-30"
-                        title="删除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-xs text-[#E8B931]">
-                        {cloudImporting === rec.id ? '导入中...' : '导入'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => { setShowCloudImport(false); setCloudError(''); }}
-                className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CloudImportDialog
+        open={showCloudImport}
+        onClose={() => {
+          setShowCloudImport(false);
+          setCloudError('');
+        }}
+        records={cloudRecords}
+        loading={cloudLoading}
+        error={cloudError}
+        importingId={cloudImporting}
+        onSelect={handleSelectCloudRecord}
+        onDelete={handleDeleteCloudRecord}
+      />
 
       {/* Main content */}
       <div className="flex h-[calc(100vh-48px)]">
@@ -1046,148 +712,41 @@ export default function AnalyzePage() {
             variationMoves={variationMoves}
           />
 
-          {/* Board controls */}
-          <div className="flex items-center gap-1.5 mt-3">
-            <button
-              onClick={goToFirstMove}
-              disabled={!canGoPrev}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="第一手"
-            >
-              <SkipBack className="w-4 h-4" />
-            </button>
-            <button
-              onClick={goBackward5}
-              disabled={!canGoPrev}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="后退5步"
-            >
-              <Rewind className="w-4 h-4" />
-            </button>
-            <button
-              onClick={goToPrevMove}
-              disabled={!canGoPrev}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="上一步"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={goToNextMove}
-              disabled={!canGoNext}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="下一步"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={goForward5}
-              disabled={!canGoNext}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="前进5步"
-            >
-              <FastForward className="w-4 h-4" />
-            </button>
-            <button
-              onClick={goToLastMove}
-              disabled={!canGoNext}
-              className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-              title="最后一手"
-            >
-              <SkipForward className="w-4 h-4" />
-            </button>
-            <span className="text-[#4A4A6A] text-xs mx-1">|</span>
-            {/* Board size */}
-            {[9, 13, 19].map((size) => (
-              <button
-                key={size}
-                onClick={() => {
-                  if (size !== boardSize) {
-                    disconnect();
-                    setBoardSize(size);
-                  }
-                }}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  boardSize === size
-                    ? 'bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30'
-                    : 'bg-[#16213E] text-[#8B8FA3] hover:bg-[#2A3A5C]'
-                }`}
-              >
-                {size}路
-              </button>
-            ))}
-            <span className="text-[#4A4A6A] text-xs mx-1">|</span>
-            <button
-              onClick={() => {
-                disconnect();
-                resetBoard();
-                setVariationMoves(null);
-                analysisCacheRef.current.clear();
-                setDisplayAnalysis([]);
-                setDisplayWinrate(null);
-                setPlayerBlack('');
-                setPlayerWhite('');
-                setCloudSourceRecordId(null);
-                cloudSourceFileKeyRef.current = null;
-              }}
-              className="px-3 py-1.5 text-xs bg-[#16213E] hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
-            >
-              清空
-            </button>
-          </div>
-
-          {/* Rules & Komi */}
-          <div className="flex items-center gap-3 mt-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#4A4A6A]">规则</span>
-              {(['chinese', 'japanese', 'aga'] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRules(r)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                    rules === r
-                      ? 'bg-[#E8B931]/15 text-[#E8B931]'
-                      : 'text-[#4A4A6A] hover:text-[#8B8FA3]'
-                  }`}
-                >
-                  {r === 'chinese' ? '中国' : r === 'japanese' ? '日本' : 'AGA'}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#4A4A6A]">贴目</span>
-              {[5.5, 6.5, 7.5].map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setKomi(k)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                    komi === k
-                      ? 'bg-[#E8B931]/15 text-[#E8B931]'
-                      : 'text-[#4A4A6A] hover:text-[#8B8FA3]'
-                  }`}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-          </div>
+          <BoardControls
+            boardSize={boardSize}
+            komi={komi}
+            rules={rules}
+            canGoPrev={canGoPrev}
+            canGoNext={canGoNext}
+            onGoFirst={goToFirstMove}
+            onGoLast={goToLastMove}
+            onGoPrev={goToPrevMove}
+            onGoNext={goToNextMove}
+            onGoBack5={goBackward5}
+            onGoForward5={goForward5}
+            onSetSize={handleSetSize}
+            onSetKomi={setKomi}
+            onSetRules={setRules}
+            onReset={handleReset}
+          />
         </div>
 
         {/* Right: Analysis panel */}
         <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
-          {/* Mode indicator badge */}
+          {/* Mode badge */}
           <div className="flex items-center justify-between">
             <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">当前模式</span>
-            <span className={`text-xs px-2 py-0.5 rounded border ${
-              analysisMode === 'remote'
-                ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
-                : 'bg-[#E8B931]/15 text-[#E8B931] border-[#E8B931]/30'
-            }`}>
+            <span
+              className={`text-xs px-2 py-0.5 rounded border ${
+                analysisMode === 'remote'
+                  ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
+                  : 'bg-[#E8B931]/15 text-[#E8B931] border-[#E8B931]/30'
+              }`}
+            >
               {analysisMode === 'remote' ? '远程算力' : '本地分析'}
             </span>
           </div>
 
-          {/* AI Config — only shown in local analysis mode */}
           {analysisMode === 'local' && (
             <AiConfigPanel
               selectedConfig={selectedConfig}
@@ -1198,52 +757,25 @@ export default function AnalyzePage() {
               onStartAnalysis={handleStartAnalysis}
               onStopAnalysis={handleStopAnalysis}
               isAutoAnalyzing={isAutoAnalyzing}
-              onToggleAutoAnalyze={handleToggleAutoAnalyze}
+              onToggleAutoAnalyze={() => setIsAutoAnalyzing((p) => !p)}
               error={analysisError}
             />
           )}
 
-          {/* Remote Engine Panel — only shown in remote compute mode */}
           {analysisMode === 'remote' && (
             <RemoteEnginePanel isActive={analysisMode === 'remote'} />
           )}
 
-          {/* Save SGF */}
-          <div className="relative" ref={sgfMenuRef}>
-            <button
-              onClick={() => setShowSgfMenu(!showSgfMenu)}
-              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs bg-[#1A1A2E] hover:bg-[#2A3A5C] text-[#C8CAD0] border border-[#2A3A5C]/30 rounded transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              保存 SGF
-            </button>
-            {showSgfMenu && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-[#1A1A2E] border border-[#2A3A5C] rounded shadow-lg z-10 overflow-hidden">
-                <button
-                  onClick={() => handleSaveSgf(false)}
-                  className="w-full text-left px-3 py-2 text-xs text-[#C8CAD0] hover:bg-[#2A3A5C] transition-colors"
-                >
-                  纯棋谱文件
-                </button>
-                <button
-                  onClick={() => handleSaveSgf(true)}
-                  className="w-full text-left px-3 py-2 text-xs text-[#C8CAD0] hover:bg-[#2A3A5C] transition-colors border-t border-[#2A3A5C]/30"
-                >
-                  带分析的棋谱文件
-                </button>
-                <button
-                  onClick={handleSaveToCloud}
-                  disabled={cloudSaving}
-                  className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-[#E8B931] hover:bg-[#2A3A5C] transition-colors border-t border-[#2A3A5C]/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Cloud className="w-3.5 h-3.5" />
-                  {cloudSaving ? '保存中...' : '保存到云棋谱库'}
-                </button>
-              </div>
-            )}
-          </div>
+          <SaveSgfMenu
+            cloudSourceRecordId={cloudSourceRecordId}
+            showMenu={showSgfMenu}
+            cloudSaving={cloudSaving}
+            onToggle={() => setShowSgfMenu((p) => !p)}
+            onSaveLocal={handleSaveSgf}
+            onSaveCloud={handleSaveToCloud}
+            menuRef={sgfMenuRef}
+          />
 
-          {/* Move tree */}
           <MoveTree
             tree={moveTree}
             currentNodeId={currentNodeId}
@@ -1252,14 +784,12 @@ export default function AnalyzePage() {
             onDeleteBranch={deleteBranch}
           />
 
-          {/* Winrate chart */}
           <WinrateChart
             winrateHistory={fullWinrateHistory}
             currentMoveNumber={currentMoveNumber}
             onClickMove={handleWinrateClick}
           />
 
-          {/* Analysis panel (winrate bar + suggestion table) */}
           <AnalysisPanel
             analysisData={displayAnalysis}
             currentWinrate={displayWinrate}
@@ -1270,18 +800,16 @@ export default function AnalyzePage() {
             selectedMove={selectedMove}
           />
 
-          {/* Hawk-Eye analysis panel */}
           <HawkEyePanel
             analysisData={displayAnalysis}
             currentWinrate={displayWinrate}
             gtpMoves={gtpMoves}
             isConnected={isConnected}
-            analysisCache={analysisCacheRef.current}
+            analysisCache={cacheRef.current}
           />
         </div>
       </div>
 
-      {/* KataGo Log Viewer */}
       <KataGoLogViewer logs={logs} />
     </div>
   );
