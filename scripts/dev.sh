@@ -29,6 +29,6 @@ kill_port_if_listening() {
 
 echo "Clearing port ${DEPLOY_RUN_PORT} before start."
 kill_port_if_listening
-echo "Starting HTTP service on port ${DEPLOY_RUN_PORT} for dev..."
+echo "Starting Next.js dev server on port ${DEPLOY_RUN_PORT}..."
 
-PORT=${DEPLOY_RUN_PORT} pnpm tsx watch src/server.ts
+pnpm next dev -p ${DEPLOY_RUN_PORT}

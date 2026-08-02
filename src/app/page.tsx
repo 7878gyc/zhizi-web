@@ -8,7 +8,8 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (isLoggedIn()) {
+    const mode = typeof window !== 'undefined' ? localStorage.getItem('zhizi_analysis_mode') : null;
+    if (isLoggedIn() || mode === 'remote') {
       router.replace('/analyze');
     } else {
       router.replace('/login');

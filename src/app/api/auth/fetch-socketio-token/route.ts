@@ -18,7 +18,13 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(body),
     });
-    const data = await resp.json();
+    const text = await resp.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text.slice(0, 200) };
+    }
     return NextResponse.json(data, { status: resp.status });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch socket token';

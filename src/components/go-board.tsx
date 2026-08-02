@@ -218,7 +218,7 @@ export default function GoBoard({
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
-          const fontSize = Math.max(9, stoneRadius * 0.55);
+          const fontSize = Math.max(7, stoneRadius * 0.4);
           ctx.font = `bold ${fontSize}px sans-serif`;
           ctx.fillText(winrateText, x, y - fontSize * 0.4);
 

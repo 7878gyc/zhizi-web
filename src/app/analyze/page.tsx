@@ -9,14 +9,18 @@ import MoveTree from '@/components/move-tree';
 import WinrateChart from '@/components/winrate-chart';
 import KataGoLogViewer from '@/components/katago-log-viewer';
 import HawkEyePanel from '@/components/hawk-eye-panel';
-import RemoteEnginePanel from '@/components/remote-engine-panel';
+// import RemoteEnginePanel from '@/components/remote-engine-panel'; // Module not yet created
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
 import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
 import { gtpToCoord } from '@/lib/go-types';
 import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
+import {
+  MobileAnalyzeLayout,
+} from './_components/mobile/mobile-analyze-layout';
 
 import AnalyzeHeader from './_components/analyze-header';
 import BoardControls from './_components/board-controls';
@@ -35,6 +39,7 @@ interface VariationMove {
 
 export default function AnalyzePage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const game = useGoGame(19);
   const [selectedConfig, setSelectedConfig] = useState<AiConfig>({
     platform: 'all',
@@ -56,13 +61,13 @@ export default function AnalyzePage() {
   const [playerWhite, setPlayerWhite] = useState('');
 
   // --- Analysis mode ---
-  const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>('local');
-  useEffect(() => {
+  const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('zhizi_analysis_mode');
-      if (saved === 'remote') setAnalysisMode('remote');
+      if (saved === 'remote') return 'remote';
     }
-  }, []);
+    return 'local';
+  });
 
   // --- Auth ---
   useEffect(() => {
@@ -128,6 +133,7 @@ export default function AnalyzePage() {
     isAnalyzing,
     isConnected,
     isConnecting,
+    aiReady,
     error: analysisError,
     logs,
     connect,
@@ -169,6 +175,10 @@ export default function AnalyzePage() {
       prevMoveCountRef.current = -1;
       return;
     }
+    // Wait for engine to be ready before issuing the first analysis.
+    // If the engine is not ready yet, leave prevMoveCountRef untouched so
+    // the effect re-runs (and triggers syncAndAnalyze) once aiReady flips true.
+    if (!aiReady) return;
     if (gtpMoves.length === prevMoveCountRef.current) return;
 
     const oldIdx = prevMoveCountRef.current;
@@ -194,7 +204,7 @@ export default function AnalyzePage() {
       player: currentPlayer,
       moves: gtpMoves,
     });
-  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
+  }, [isConnected, aiReady, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
   // --- Load cached analysis on tree navigation ---
   useEffect(() => {
@@ -241,8 +251,12 @@ export default function AnalyzePage() {
   // --- Handlers ---
 
   const handleStartAnalysis = useCallback(() => {
-    if (getToken()) connect(selectedConfig);
-  }, [selectedConfig, connect]);
+    if (getToken()) {
+      connect(selectedConfig);
+    } else {
+      router.replace('/login');
+    }
+  }, [selectedConfig, connect, router]);
 
   const handleStopAnalysis = useCallback(() => {
     setIsAutoAnalyzing(false);
@@ -650,6 +664,100 @@ export default function AnalyzePage() {
   // ============================================================
   // Render
   // ============================================================
+  if (isMobile) {
+    return (
+      <div className="h-dvh bg-[#0F0F23] text-[#E0E0E0] flex flex-col overflow-hidden">
+        {/* Hidden SGF file input */}
+        <input
+          ref={sgfInputRef}
+          type="file"
+          accept=".sgf"
+          className="hidden"
+          onChange={importSgfFromFile}
+        />
+
+        <FoxwqImportDialog
+          open={showFoxwq}
+          onClose={() => setShowFoxwq(false)}
+          onImport={handleFoxwqImport}
+        />
+
+        <CloudImportDialog
+          open={showCloudImport}
+          onClose={() => {
+            setShowCloudImport(false);
+            setCloudError('');
+          }}
+          records={cloudRecords}
+          loading={cloudLoading}
+          error={cloudError}
+          importingId={cloudImporting}
+          onSelect={handleSelectCloudRecord}
+          onDelete={handleDeleteCloudRecord}
+        />
+
+        <MobileAnalyzeLayout
+          board={board}
+          boardSize={boardSize}
+          lastMove={lastMove}
+          currentPlayer={currentPlayer}
+          hoverCoord={hoverCoord}
+          winrateHistory={fullWinrateHistory}
+          displayWinrate={displayWinrate}
+          analysisData={displayAnalysis}
+          selectedPv={displayAnalysis[0] ?? null}
+          variationMoves={variationMoves ?? []}
+          selectedMove={selectedMove}
+          onSelectMove={handleSelectMove}
+          onBoardClick={handleCellClick}
+          onBoardHover={setHoverCoord}
+          onSelectMoveFromWinrate={handleWinrateClick}
+          gpu={selectedConfig.gpuType}
+          weight={selectedConfig.kataWeight}
+          gpuOptions={['1x', '2x', '3x', '4x', 'vip-share']}
+          weightOptions={['18b', '28bnbt', 'fdx']}
+          onGpuChange={(g) => setSelectedConfig((p) => ({ ...p, gpuType: g }))}
+          onWeightChange={(w) => setSelectedConfig((p) => ({ ...p, kataWeight: w }))}
+          blackName={playerBlack}
+          whiteName={playerWhite}
+          onBlackNameChange={setPlayerBlack}
+          onWhiteNameChange={setPlayerWhite}
+          komi={komi}
+          rules={rules}
+          onKomiChange={setKomi}
+          onRulesChange={setRules}
+          moveTree={moveTree}
+          currentNodeId={currentNodeId}
+          currentMoveNumber={currentMoveNumber}
+          onJumpToNode={jumpToNode}
+          onDeleteNode={deleteNode}
+          onDeleteBranch={deleteBranch}
+          gtpMoves={gtpMoves}
+          isAnalyzing={isAnalyzing}
+          isAutoAnalyze={isAutoAnalyzing}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          analysisError={analysisError}
+          logs={logs}
+          onToggleAnalyze={() =>
+            isAnalyzing ? handleStopAnalysis() : handleStartAnalysis()
+          }
+          onToggleAuto={() => setIsAutoAnalyzing((p) => !p)}
+          onNewBoard={handleReset}
+          onSaveSgf={() => handleSaveSgf(true)}
+          onLoadSgf={() => sgfInputRef.current?.click()}
+          onImportFoxwq={() => setShowFoxwq(true)}
+          onCloudSave={handleSaveToCloud}
+          onCloudLoad={handleOpenCloudImport}
+          userDisplayName={userDisplayName}
+          onLogout={handleLogout}
+          onGoToPrevMove={goToPrevMove}
+          onGoToNextMove={goToNextMove}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0F0F23] text-[#E0E0E0]">
       <AnalyzeHeader
@@ -763,7 +871,9 @@ export default function AnalyzePage() {
           )}
 
           {analysisMode === 'remote' && (
-            <RemoteEnginePanel isActive={analysisMode === 'remote'} />
+            <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+              <p className="text-xs text-cyan-400">远程算力模式（即将支持）</p>
+            </div>
           )}
 
           <SaveSgfMenu

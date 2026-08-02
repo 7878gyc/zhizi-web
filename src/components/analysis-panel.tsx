@@ -10,6 +10,7 @@ interface AnalysisPanelProps {
   speed?: number;
   onSelectMove?: (info: AnalysisInfo) => void;
   selectedMove?: string | null;
+  hideWinrateBar?: boolean;
 }
 
 // Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
@@ -31,6 +32,7 @@ export default function AnalysisPanel({
   speed,
   onSelectMove,
   selectedMove,
+  hideWinrateBar,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
@@ -45,7 +47,8 @@ export default function AnalysisPanel({
   return (
     <div className="space-y-4">
       {/* Winrate bar */}
-      <div className="space-y-2">
+      {!hideWinrateBar && (
+        <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-[#4A9EFF] font-medium">黑 {blackWinrate !== null ? `${Math.round(blackWinrate * 100)}%` : '--'}</span>
           <span className="text-[#8B8FA3]">胜率</span>
@@ -68,6 +71,7 @@ export default function AnalysisPanel({
           </div>
         )}
       </div>
+      )}
 
       {/* Move suggestion table - top 15 with color coding */}
       <div className="space-y-1.5">
