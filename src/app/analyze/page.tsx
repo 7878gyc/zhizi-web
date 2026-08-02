@@ -733,6 +733,7 @@ export default function AnalyzePage() {
           onDeleteNode={deleteNode}
           onDeleteBranch={deleteBranch}
           gtpMoves={gtpMoves}
+          analysisCache={cacheRef.current}
           isAnalyzing={isAnalyzing}
           isAutoAnalyze={isAutoAnalyzing}
           isConnected={isConnected}

@@ -102,9 +102,10 @@ export function MobileMenuSheet({
         </Button>
       </div>
 
-      {/* Tab content */}
+      {/* Tab content - always mounted so data-collecting panels (e.g. HawkEye)
+          keep running even when their tab is not active */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {activeTab === 'info' && (
+        <div className={cn('flex-1 overflow-auto min-h-0', activeTab !== 'info' && 'hidden')}>
           <MobileGameInfoTab
             blackName={blackName}
             whiteName={whiteName}
@@ -118,55 +119,47 @@ export function MobileMenuSheet({
             onKomiChange={onKomiChange}
             onRulesChange={onRulesChange}
           />
-        )}
+        </div>
 
-        {activeTab === 'move-tree' && (
-          <div className="flex-1 overflow-auto px-2 py-2">
-            {moveTreeSlot}
-          </div>
-        )}
+        <div className={cn('flex-1 overflow-auto px-2 py-2 min-h-0', activeTab !== 'move-tree' && 'hidden')}>
+          {moveTreeSlot}
+        </div>
 
-        {activeTab === 'winrate' && (
-          <div className="flex-1 overflow-auto px-2 py-2 space-y-3">
-            {winrateChartSlot}
+        <div className={cn('flex-1 overflow-auto px-2 py-2 space-y-3 min-h-0', activeTab !== 'winrate' && 'hidden')}>
+          {winrateChartSlot}
 
-            {/* Live winrate below the chart: black|white split bar, winrate inside */}
-            <div className="h-4 rounded-full overflow-hidden flex bg-[#2A3A5C]/40">
-              {blackWinrate === null ? (
-                <div className="flex-1 flex items-center justify-center text-[9px] text-[#4A4A6A]">
-                  连接 AI 后开始分析
+          {/* Live winrate below the chart: black|white split bar, winrate inside */}
+          <div className="h-4 rounded-full overflow-hidden flex bg-[#2A3A5C]/40">
+            {blackWinrate === null ? (
+              <div className="flex-1 flex items-center justify-center text-[9px] text-[#4A4A6A]">
+                连接 AI 后开始分析
+              </div>
+            ) : (
+              <>
+                <div
+                  className="flex items-center justify-center bg-[#1A1A1A] text-[9px] font-semibold text-white overflow-hidden"
+                  style={{ width: `${blackWinrate * 100}%` }}
+                >
+                  {Math.round(blackWinrate * 100)}%
                 </div>
-              ) : (
-                <>
-                  <div
-                    className="flex items-center justify-center bg-[#1A1A1A] text-[9px] font-semibold text-white overflow-hidden"
-                    style={{ width: `${blackWinrate * 100}%` }}
-                  >
-                    {Math.round(blackWinrate * 100)}%
-                  </div>
-                  <div
-                    className="flex items-center justify-center bg-[#E8E8E8] text-[9px] font-semibold text-[#1A1A2E] overflow-hidden"
-                    style={{ width: `${(1 - blackWinrate) * 100}%` }}
-                  >
-                    {Math.round((1 - blackWinrate) * 100)}%
-                  </div>
-                </>
-              )}
-            </div>
+                <div
+                  className="flex items-center justify-center bg-[#E8E8E8] text-[9px] font-semibold text-[#1A1A2E] overflow-hidden"
+                  style={{ width: `${(1 - blackWinrate) * 100}%` }}
+                >
+                  {Math.round((1 - blackWinrate) * 100)}%
+                </div>
+              </>
+            )}
           </div>
-        )}
+        </div>
 
-        {activeTab === 'variation' && (
-          <div className="flex-1 overflow-auto px-3 py-3">
-            {variationSlot}
-          </div>
-        )}
+        <div className={cn('flex-1 overflow-auto px-3 py-3 min-h-0', activeTab !== 'variation' && 'hidden')}>
+          {variationSlot}
+        </div>
 
-        {activeTab === 'hawk-eye' && (
-          <div className="flex-1 overflow-auto px-2 py-2">
-            {hawkEyeSlot}
-          </div>
-        )}
+        <div className={cn('flex-1 overflow-auto px-2 py-2 min-h-0', activeTab !== 'hawk-eye' && 'hidden')}>
+          {hawkEyeSlot}
+        </div>
       </div>
     </div>
   );
