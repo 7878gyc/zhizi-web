@@ -36,6 +36,8 @@ interface HawkEyePanelProps {
   isConnected: boolean;
   /** Pre-built analysis cache from SGF import (offline mode). Populates internal history on mount. */
   analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+  /** Jump to the given move number in the game tree. */
+  onJumpToMove?: (moveNumber: number) => void;
 }
 
 function computeResults(history: Map<number, HawkEyeRecord>, gtpMoves: string[]): HawkEyeMoveResult[] {
@@ -150,6 +152,7 @@ export default function HawkEyePanel({
   gtpMoves,
   isConnected,
   analysisCache,
+  onJumpToMove,
 }: HawkEyePanelProps) {
   const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
   const [version, setVersion] = useState(0);
@@ -232,7 +235,8 @@ export default function HawkEyePanel({
               return problems.map((r, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2 px-2 py-1 rounded text-xs"
+                  onClick={() => onJumpToMove?.(r.moveNumber)}
+                  className="flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer transition-colors hover:bg-[#1A1A2E]/80"
                   style={{ backgroundColor: SEVERITY_BG[r.problemSeverity] }}
                 >
                   <span className="w-6 font-mono text-[#8B8FA3] text-right shrink-0">

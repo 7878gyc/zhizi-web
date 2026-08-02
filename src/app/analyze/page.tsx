@@ -734,6 +734,7 @@ export default function AnalyzePage() {
           onDeleteBranch={deleteBranch}
           gtpMoves={gtpMoves}
           analysisCache={cacheRef.current}
+          onJumpToMove={handleWinrateClick}
           isAnalyzing={isAnalyzing}
           isAutoAnalyze={isAutoAnalyzing}
           isConnected={isConnected}
@@ -917,6 +918,7 @@ export default function AnalyzePage() {
             gtpMoves={gtpMoves}
             isConnected={isConnected}
             analysisCache={cacheRef.current}
+            onJumpToMove={handleWinrateClick}
           />
         </div>
       </div>

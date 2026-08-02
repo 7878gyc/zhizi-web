@@ -63,6 +63,8 @@ interface MobileAnalyzeLayoutProps {
   gtpMoves: string[];
   /** Pre-built analysis cache (offline mode). Lets HawkEye rebuild results after disconnect. */
   analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+  /** Jump to the given move number in the game tree (from HawkEye problem list). */
+  onJumpToMove?: (moveNumber: number) => void;
 
   /* Analysis */
   isAnalyzing: boolean;
@@ -129,6 +131,7 @@ export function MobileAnalyzeLayout({
   onDeleteBranch,
   gtpMoves,
   analysisCache,
+  onJumpToMove,
   isAnalyzing,
   isAutoAnalyze,
   isConnected,
@@ -271,6 +274,7 @@ export function MobileAnalyzeLayout({
                   gtpMoves={gtpMoves}
                   isConnected={isConnected}
                   analysisCache={analysisCache}
+                  onJumpToMove={onJumpToMove}
                 />
               }
             />
