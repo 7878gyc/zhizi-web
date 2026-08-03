@@ -268,6 +268,7 @@ export function MobileAnalyzeLayout({
                   selectedMove={selectedMove}
                   hideWinrateBar
                   hideTitle
+                  compact
                 />
               }
               hawkEyeSlot={

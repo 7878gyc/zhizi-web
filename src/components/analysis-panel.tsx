@@ -13,6 +13,8 @@ interface AnalysisPanelProps {
   hideWinrateBar?: boolean;
   /** Hide section titles (e.g. when rendered inside a tab bar that already labels it). */
   hideTitle?: boolean;
+  /** Compact two-column move list (mobile tab). Smaller text, only winrate/score/visits. */
+  compact?: boolean;
 }
 
 // Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
@@ -36,6 +38,7 @@ export default function AnalysisPanel({
   selectedMove,
   hideWinrateBar,
   hideTitle,
+  compact,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
@@ -90,10 +93,59 @@ export default function AnalysisPanel({
           )}
         </div>
 
-        <div className="space-y-0.5 max-h-[400px] overflow-y-auto">
+        <div className={compact ? '' : 'space-y-0.5 max-h-[400px] overflow-y-auto'}>
           {topMoves.length === 0 ? (
             <div className="text-[#4A4A6A] text-xs text-center py-6">
               连接 AI 后开始分析
+            </div>
+          ) : compact ? (
+            /* Compact two-column cards: rank + coord, then winrate/score/visits */
+            <div className="grid grid-cols-2 gap-1.5">
+              {topMoves.map((info, idx) => {
+                const winrateLoss = bestWinrate - (info.winrate ?? 0);
+                const color = getRankColor(idx, info.prior ?? 0, winrateLoss);
+                return (
+                  <div
+                    key={`${info.move}-${idx}`}
+                    className={`rounded-lg bg-[#1A1A2E]/50 px-2 py-1.5 cursor-pointer transition-colors hover:bg-[#1A1A2E]/80 ${
+                      selectedMove === info.move ? 'bg-[#E8B931]/15 ring-1 ring-[#E8B931]/40' : ''
+                    }`}
+                    onClick={() => onSelectMove?.(info)}
+                    title={selectedMove === info.move ? '点击取消预览' : '点击查看变化图'}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+                        style={{
+                          backgroundColor: `${color}20`,
+                          color,
+                          border: `1.5px solid ${color}`,
+                        }}
+                      >
+                        {idx + 1}
+                      </span>
+                      <span className="font-mono font-semibold text-[11px] text-[#E0E0E0] leading-none">
+                        {info.move}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between font-mono text-[10px] leading-none">
+                      <span style={{ color }}>
+                        {info.winrate !== undefined ? `${(info.winrate * 100).toFixed(1)}%` : '--'}
+                      </span>
+                      <span className="text-[#8B8FA3]">
+                        {info.scoreLead !== undefined
+                          ? `${info.scoreLead > 0 ? '+' : ''}${info.scoreLead.toFixed(1)}`
+                          : info.scoreMean !== undefined
+                            ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
+                            : '--'}
+                      </span>
+                      <span className="text-[#4A4A6A]">
+                        {info.visits > 1000 ? `${(info.visits / 1000).toFixed(1)}k` : info.visits}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <>
