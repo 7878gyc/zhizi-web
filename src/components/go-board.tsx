@@ -159,7 +159,9 @@ export default function GoBoard({
     }
 
     // LizzieYZY-style: visit-based red→green gradient, best=cyan
-    if (analysisData.length > 0) {
+    // Hidden while a variation preview is active so the preview stays readable
+    const isPreviewing = variationMoves != null && variationMoves.length > 0;
+    if (analysisData.length > 0 && !isPreviewing) {
       const topMoves = analysisData.slice(0, 10);
       const maxVisits = topMoves.reduce((mx, m) => Math.max(mx, m.visits), 0) || 1;
       const MIN_ALPHA = 0.125;
