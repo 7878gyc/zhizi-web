@@ -9,6 +9,8 @@ interface MoveTreeProps {
   onJumpToNode: (nodeId: string) => void;
   onDeleteNode: (nodeId: string) => void;
   onDeleteBranch: (nodeId: string) => void;
+  /** Hide the panel title (e.g. when rendered inside a tab bar that already labels it). */
+  hideTitle?: boolean;
 }
 
 interface LayoutNode {
@@ -35,6 +37,7 @@ export default function MoveTree({
   onJumpToNode,
   onDeleteNode,
   onDeleteBranch,
+  hideTitle,
 }: MoveTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -113,7 +116,9 @@ export default function MoveTree({
   if (layoutNodes.length <= 1) {
     return (
       <div className="space-y-1.5">
-        <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">落子树</span>
+        {!hideTitle && (
+          <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">落子树</span>
+        )}
         <div className="bg-[#1A1A2E]/50 rounded-lg px-3 py-4 text-center text-[#4A4A6A] text-xs">
           尚无落子
         </div>
@@ -123,7 +128,9 @@ export default function MoveTree({
 
   return (
     <div className="space-y-1.5">
-      <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">落子树</span>
+      {!hideTitle && (
+        <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">落子树</span>
+      )}
       <div
         ref={containerRef}
         className="bg-[#1A1A2E]/50 rounded-lg overflow-auto max-h-[160px] scrollbar-thin"

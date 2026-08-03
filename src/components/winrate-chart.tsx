@@ -6,6 +6,7 @@ interface WinrateChartProps {
   winrateHistory: (number | null)[];
   currentMoveNumber: number;
   onClickMove?: (moveNumber: number) => void;
+  hideTitle?: boolean;
 }
 
 const CHART_HEIGHT = 120;
@@ -15,6 +16,7 @@ export default function WinrateChart({
   winrateHistory,
   currentMoveNumber,
   onClickMove,
+  hideTitle,
 }: WinrateChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -208,7 +210,9 @@ export default function WinrateChart({
 
   return (
     <div className="space-y-1.5">
-      <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">胜率曲线</span>
+      {!hideTitle && (
+        <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">胜率曲线</span>
+      )}
       <div ref={containerRef} className="w-full">
         <canvas
           ref={canvasRef}

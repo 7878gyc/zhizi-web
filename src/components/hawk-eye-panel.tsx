@@ -38,6 +38,8 @@ interface HawkEyePanelProps {
   analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
   /** Jump to the given move number in the game tree. */
   onJumpToMove?: (moveNumber: number) => void;
+  /** Hide the panel title (e.g. when rendered inside a tab bar that already labels it). */
+  hideTitle?: boolean;
 }
 
 function computeResults(history: Map<number, HawkEyeRecord>, gtpMoves: string[]): HawkEyeMoveResult[] {
@@ -153,6 +155,7 @@ export default function HawkEyePanel({
   isConnected,
   analysisCache,
   onJumpToMove,
+  hideTitle,
 }: HawkEyePanelProps) {
   const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
   const [version, setVersion] = useState(0);
@@ -211,8 +214,10 @@ export default function HawkEyePanel({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">鹰眼分析</span>
-        <span className="text-[10px] text-[#4A4A6A]">
+        {!hideTitle && (
+          <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">鹰眼分析</span>
+        )}
+        <span className="text-[10px] text-[#4A4A6A] ml-auto">
           {analyzedTotal}/{totalMoves}
         </span>
       </div>

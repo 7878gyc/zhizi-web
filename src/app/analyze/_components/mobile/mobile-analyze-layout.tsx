@@ -247,6 +247,7 @@ export function MobileAnalyzeLayout({
                   onJumpToNode={onJumpToNode}
                   onDeleteNode={onDeleteNode}
                   onDeleteBranch={onDeleteBranch}
+                  hideTitle
                 />
               }
               winrateChartSlot={
@@ -254,6 +255,7 @@ export function MobileAnalyzeLayout({
                   winrateHistory={winrateHistory}
                   currentMoveNumber={currentMoveNumber}
                   onClickMove={onSelectMoveFromWinrate}
+                  hideTitle
                 />
               }
               variationSlot={
@@ -265,6 +267,7 @@ export function MobileAnalyzeLayout({
                   onSelectMove={onSelectMove}
                   selectedMove={selectedMove}
                   hideWinrateBar
+                  hideTitle
                 />
               }
               hawkEyeSlot={
@@ -275,6 +278,7 @@ export function MobileAnalyzeLayout({
                   isConnected={isConnected}
                   analysisCache={analysisCache}
                   onJumpToMove={onJumpToMove}
+                  hideTitle
                 />
               }
             />

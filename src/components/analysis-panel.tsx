@@ -11,6 +11,8 @@ interface AnalysisPanelProps {
   onSelectMove?: (info: AnalysisInfo) => void;
   selectedMove?: string | null;
   hideWinrateBar?: boolean;
+  /** Hide section titles (e.g. when rendered inside a tab bar that already labels it). */
+  hideTitle?: boolean;
 }
 
 // Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
@@ -33,6 +35,7 @@ export default function AnalysisPanel({
   onSelectMove,
   selectedMove,
   hideWinrateBar,
+  hideTitle,
 }: AnalysisPanelProps) {
   const blackWinrate = currentWinrate !== null
     ? currentPlayer === 'black' ? currentWinrate : 1 - currentWinrate
@@ -76,7 +79,9 @@ export default function AnalysisPanel({
       {/* Move suggestion table - top 15 with color coding */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">选点表</span>
+          {!hideTitle && (
+            <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">选点表</span>
+          )}
           {isAnalyzing && (
             <span className="flex items-center gap-1 text-amber-400 text-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -165,7 +170,9 @@ export default function AnalysisPanel({
       {/* Principal variation */}
       {analysisData.length > 0 && analysisData[0].pv && analysisData[0].pv.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">主要变化</span>
+          {!hideTitle && (
+            <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">主要变化</span>
+          )}
           <div className="bg-[#1A1A2E]/50 rounded px-3 py-2">
             <div className="flex flex-wrap gap-1">
               {analysisData[0].pv!.slice(0, 10).map((move, idx) => (
