@@ -31,6 +31,10 @@ interface CreditItem {
   createdAt: string;
 }
 
+interface BalanceInfo {
+  remainingBalance: number;
+}
+
 interface MembershipProduct {
   name: string;
   type: string;
@@ -138,6 +142,7 @@ interface ConsumptionDialogProps {
 function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
   const [usages, setUsages] = useState<UsageItem[]>([]);
   const [credits, setCredits] = useState<CreditItem[]>([]);
+  const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -145,12 +150,14 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
     setLoading(true);
     setError('');
     try {
-      const [u, c] = await Promise.all([
+      const [u, c, b] = await Promise.all([
         api<{ items: UsageItem[] }>('/api/cluster/usage/my-usages?page=0&pageSize=50'),
         api<{ items: CreditItem[] }>('/api/cluster/credit/my-credits?page=0&pageSize=50'),
+        api<BalanceInfo>('/api/cluster/balance'),
       ]);
       setUsages(u.items ?? []);
       setCredits(c.items ?? []);
+      setBalance(typeof b?.remainingBalance === 'number' ? b.remainingBalance : null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '加载失败');
     } finally {
@@ -188,6 +195,13 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl max-h-[80vh] flex flex-col">
         <h3 className="text-sm font-bold text-[#E8B931] mb-3 shrink-0">消费记录</h3>
+
+        {balance !== null && (
+          <div className="shrink-0 mb-3 flex items-center justify-between bg-[#1A1A2E]/60 border border-[#2A3A5C]/50 rounded-lg px-4 py-3">
+            <span className="text-xs text-[#8B8FA3]">当前余额</span>
+            <span className="text-lg font-bold text-[#E8B931]">¥{balance.toFixed(2)}</span>
+          </div>
+        )}
 
         {error && <p className="text-xs text-[#FF6B6B] mb-3 shrink-0">{error}</p>}
 
