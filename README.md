@@ -4,16 +4,20 @@
 
 ## 核心功能
 
-- **登录认证**：手机号/邮箱 + 密码登录，通过后端代理转发 `zhizigo.com` API
+- **登录认证**：手机号/邮箱 + 密码登录、短信验证码登录，通过后端代理转发 `zhizigo.com` API
 - **交互式棋盘**：Canvas 渲染 19x19 围棋盘，支持落子、悔棋、重放、棋盘尺寸切换（9/13/19 路）
 - **AI 实时分析**：通过 Socket.IO 连接 KataGo 引擎，获取胜率走势和最佳推荐落子
-- **多配置选择**：GPU 类型（1x/2x/4x）、引擎（OPENCL/TENSORRT）、权重（18b/28bnbt/40b）
-- **棋谱导入**：支持 SGF 文件导入和野狐围棋棋谱链接解析
-- **棋谱云保存**：上传 SGF 到 Cloudflare R2 存储，支持列表查看和删除，用户数据隔离
-- **胜率曲线图**：Canvas 绘制的实时胜率走势图，统一黑方视角
-- **变化图展示**：点击推荐落子查看 AI 推演的变化图（PV）
+- **多配置选择**：GPU 类型（1x/2x/3x/4x/VIP 共享）、权重（18b/28bnbt/fdx）
+- **棋盘候选点**：LizzieYZY 风格的彩色选点（红→绿渐变，最佳为青色 + 蓝环），标注胜率与目差
+- **变化图预览**：点击推荐落子查看 AI 推演的变化图（PV），预览时棋盘自动隐藏彩色选点
+- **鹰眼分析**：AI 吻合率、首选命中率、问题手标注（疑问/失误/恶手/大恶手），问题手列表可点击跳转，数据随 AI 实时刷新
+- **胜率曲线图**：Canvas 绘制的实时胜率走势图，统一黑方视角，支持点击跳转
+- **棋谱导入**：支持 SGF 文件导入、野狐围棋棋谱链接解析、云棋谱库导入
+- **SGF 导出**：生成含 KataGo LZ 分析属性的 SGF，支持本地下载与保存回云棋谱库（可覆盖更新）
+- **棋谱云保存**：上传 SGF 到 Cloudflare R2 存储，支持列表查看、下载和删除，用户数据隔离
 - **自动分析**：开启后每 2 秒自动前进下一步，遇到终局自动停止
 - **棋谱导航**：第一手/最后一手、单步前进/后退、5 步快进/快退
+- **移动端适配**：<768px 自动切换移动端布局（顶部操作栏、底部菜单、Tab 分析面板）
 
 ## 快速开始
 
@@ -48,7 +52,7 @@ pnpm build
 ```bash
 pnpm ts-check         # TypeScript 类型检查
 pnpm lint             # ESLint 检查
-pnpm validate         # 同时运行 ts-check + lint
+pnpm validate         # 同时运行 ts-check + lint:build
 npx prisma db push    # 数据库迁移（首次部署）
 npx prisma generate   # 重新生成 Prisma Client
 npx prisma studio     # 数据库可视化浏览
@@ -62,37 +66,62 @@ prisma/
 src/
 ├── app/
 │   ├── api/auth/
-│   │   ├── login/route.ts                   # 登录代理
+│   │   ├── login/route.ts                   # 密码登录代理
+│   │   ├── send-code/route.ts               # 短信验证码发送代理
+│   │   ├── fast-login/route.ts              # 验证码登录代理
 │   │   ├── me/route.ts                      # 用户信息代理
 │   │   └── fetch-socketio-token/route.ts    # Socket.IO 令牌代理
 │   ├── api/foxwq/route.ts                   # 野狐棋谱爬取代理
 │   ├── api/upload/route.ts                  # R2 预签名上传 URL 生成
 │   ├── api/records/
 │   │   ├── route.ts                         # 棋谱列表 + 保存
-│   │   └── [id]/route.ts                    # 棋谱删除
+│   │   └── [id]/route.ts                    # 棋谱删除 / 重命名
+│   │   └── [id]/download/route.ts           # 棋谱下载（预签名 URL）
 │   ├── login/page.tsx                       # 登录页面
-│   ├── analyze/page.tsx                     # AI 分析主页面
+│   ├── analyze/
+│   │   ├── page.tsx                         # AI 分析主页面（移动/桌面条件渲染）
+│   │   ├── _components/                     # 分析页子组件
+│   │   │   ├── analyze-header.tsx           # 顶部栏（桌面）
+│   │   │   ├── board-controls.tsx           # 棋盘控制条
+│   │   │   ├── cloud-save-menu.tsx          # SGF 保存菜单
+│   │   │   ├── foxwq-import-dialog.tsx      # 野狐导入弹窗
+│   │   │   ├── player-name-editor.tsx       # 棋手名编辑
+│   │   │   └── mobile/                      # 移动端组件
+│   │   │       ├── mobile-analyze-layout.tsx    # 移动端布局容器
+│   │   │       ├── mobile-top-bar.tsx           # 顶部操作栏
+│   │   │       ├── mobile-bottom-bar.tsx        # 底部操作栏
+│   │   │       ├── mobile-menu-sheet.tsx        # Tab 分析面板（常驻挂载）
+│   │   │       ├── mobile-player-badges.tsx     # 棋手徽章
+│   │   │       └── mobile-game-info-tab.tsx     # 棋局信息 Tab
+│   │   └── _hooks/
+│   │       ├── use-analysis-cache.ts        # 分析结果缓存 Hook
+│   │       ├── use-auto-analyze.ts          # 自动分析 Hook
+│   │       └── use-cloud-records.ts         # 云棋谱列表 Hook
 │   ├── records/page.tsx                     # 棋谱管理页面
 │   ├── layout.tsx                           # 根布局
+│   ├── robots.ts                            # robots 配置
 │   └── globals.css                          # 全局样式
 ├── components/
-│   ├── go-board.tsx              # Canvas 围棋棋盘组件
+│   ├── go-board.tsx              # Canvas 围棋棋盘组件（候选点/变化图绘制）
 │   ├── ai-config-panel.tsx       # AI 配置选择面板
-│   ├── analysis-panel.tsx        # 分析结果面板（胜率条 + 推荐选点）
-│   ├── move-tree.tsx             # 棋谱树形导航
+│   ├── analysis-panel.tsx        # 分析结果面板（胜率条 + 选点表，支持双列紧凑模式）
+│   ├── move-tree.tsx             # 落子树形导航
 │   ├── winrate-chart.tsx         # 胜率曲线图
+│   ├── hawk-eye-panel.tsx        # 鹰眼分析面板（问题手列表）
 │   ├── katago-log-viewer.tsx     # KataGo 引擎日志查看器
 │   └── ui/                       # shadcn/ui 组件库
 ├── hooks/
 │   ├── use-go-game.ts            # 围棋游戏核心逻辑 Hook
+│   ├── use-mobile.ts             # 移动端断点检测 Hook
 │   └── use-zhizi-analysis.ts     # Socket.IO 连接与分析 Hook
 └── lib/
     ├── go-types.ts               # 围棋类型定义、坐标转换、分析数据解析
+    ├── sgf.ts                    # SGF 生成（含 LZ/注释属性）、坐标转换
+    ├── sgf-parser.ts             # SGF 文件解析器（含 LZ 属性解析）
     ├── auth.ts                   # Token 管理工具（localStorage）
     ├── auth-server.ts            # 服务端认证（extractUserHash + SHA256）
     ├── prisma.ts                 # PrismaClient 单例
     ├── r2-client.ts              # Cloudflare R2 S3 客户端
-    ├── sgf-parser.ts             # SGF 文件解析器
     └── utils.ts                  # 通用工具函数
 ```
 
@@ -117,7 +146,9 @@ src/
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/login` | POST | 登录（代理到 zhizigo.com） |
+| `/api/auth/login` | POST | 密码登录（代理到 zhizigo.com） |
+| `/api/auth/send-code` | POST | 发送短信验证码 |
+| `/api/auth/fast-login` | POST | 验证码快速登录 |
 | `/api/auth/me` | GET | 获取当前用户信息 |
 | `/api/auth/fetch-socketio-token` | POST | 获取 KataGo 引擎连接令牌 |
 | `/api/foxwq` | POST | 爬取野狐围棋棋谱内容 |
@@ -125,6 +156,8 @@ src/
 | `/api/records` | GET | 获取当前用户的棋谱列表 |
 | `/api/records` | POST | 保存棋谱记录到数据库 |
 | `/api/records/[id]` | DELETE | 删除指定棋谱（R2 文件 + 数据库记录） |
+| `/api/records/[id]` | PATCH | 重命名棋谱记录（覆盖保存时使用） |
+| `/api/records/[id]/download` | GET | 生成棋谱文件下载预签名 URL |
 
 ## 棋谱云保存
 
