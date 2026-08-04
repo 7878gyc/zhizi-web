@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { GoStone, MoveNode } from '@/lib/go-types';
 import { coordToGTP, findNode, getPathToNode, generateNodeId, createRootNode, gtpToCoord } from '@/lib/go-types';
 
@@ -360,9 +360,12 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
 
   // Stable refs so setCurrentWinrate never changes reference
   const moveTreeRef = useRef(moveTree);
-  moveTreeRef.current = moveTree;
   const currentNodeIdRef = useRef(currentNodeId);
-  currentNodeIdRef.current = currentNodeId;
+
+  useEffect(() => {
+    moveTreeRef.current = moveTree;
+    currentNodeIdRef.current = currentNodeId;
+  });
 
   const setCurrentWinrate = useCallback(
     (winrate: number) => {

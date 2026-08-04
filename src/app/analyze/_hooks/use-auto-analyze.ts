@@ -5,7 +5,10 @@ import { useRef, useEffect } from 'react';
 export function useAutoAnalyze(isActive: boolean, isConnected: boolean, goToNextMove: () => void) {
   const autoAnalyzeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const goToNextRef = useRef(goToNextMove);
-  goToNextRef.current = goToNextMove;
+
+  useEffect(() => {
+    goToNextRef.current = goToNextMove;
+  });
 
   useEffect(() => {
     if (isActive && isConnected) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { SkipBack, ChevronLeft, Rewind, FastForward, ChevronRight, SkipForward } from 'lucide-react';
+import { KomiInput } from './komi-input';
 
 interface BoardControlsProps {
   boardSize: number;
@@ -135,21 +136,9 @@ export default function BoardControls({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <span className="text-[10px] text-[#4A4A6A]">贴目</span>
-          {[5.5, 6.5, 7.5].map((k) => (
-            <button
-              key={k}
-              onClick={() => onSetKomi(k)}
-              className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                komi === k
-                  ? 'bg-[#E8B931]/15 text-[#E8B931]'
-                  : 'text-[#4A4A6A] hover:text-[#8B8FA3]'
-              }`}
-            >
-              {k}
-            </button>
-          ))}
+          <KomiInput komi={komi} onKomiChange={onSetKomi} />
         </div>
       </div>
     </>

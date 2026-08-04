@@ -18,10 +18,14 @@ export function useAnalysisCache(
 ) {
   const cacheRef = useRef<Map<number, CacheEntry>>(new Map());
   const analysisDataRef = useRef(analysisData);
-  analysisDataRef.current = analysisData;
   const currentWinrateRef = useRef(currentWinrate);
-  currentWinrateRef.current = currentWinrate;
   const prevMoveCountRef = useRef(-1);
+
+  // Keep latest values in refs (read inside effects/event handlers)
+  useEffect(() => {
+    analysisDataRef.current = analysisData;
+    currentWinrateRef.current = currentWinrate;
+  });
 
   // Cache live analysis data whenever it arrives
   useEffect(() => {

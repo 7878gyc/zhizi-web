@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { KomiInput } from '../komi-input';
 import type { } from '@/lib/go-types';
 
 interface GameInfoTabProps {
@@ -98,18 +99,7 @@ export function MobileGameInfoTab({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs text-[#8B8FA3]">贴目</Label>
-          <Select value={String(komi)} onValueChange={(v) => onKomiChange(Number(v))}>
-            <SelectTrigger className="h-8 text-xs bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1A1A2E] border-[#2A3A5C]/60">
-              {[0, 0.5, 5.5, 6.5, 7.5].map((k) => (
-                <SelectItem key={k} value={String(k)} className="text-xs text-[#E0E0E0]">
-                  {k}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <KomiInput komi={komi} onKomiChange={onKomiChange} />
         </div>
 
         <div className="space-y-1.5">

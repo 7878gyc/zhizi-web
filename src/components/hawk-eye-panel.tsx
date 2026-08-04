@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AnalysisInfo } from '@/lib/go-types';
 
 interface HawkEyeRecord {
@@ -206,10 +206,10 @@ export default function HawkEyePanel({
     setVersion(v => v + 1);
   }, [analysisData, currentWinrate, isConnected, gtpMoves.length]);
 
-  const results = useMemo(
-    () => computeResults(historyRef.current, gtpMoves),
-    [version, gtpMoves]
-  );
+  const [results, setResults] = useState<HawkEyeMoveResult[]>([]);
+  useEffect(() => {
+    setResults(computeResults(historyRef.current, gtpMoves));
+  }, [version, gtpMoves]);
 
   const totalMoves = results.filter(r => r.actualMove).length;
   const analyzedTotal = results.filter(r => r.actualMove && r.winrate != null).length;
