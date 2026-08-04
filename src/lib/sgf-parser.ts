@@ -171,6 +171,25 @@ function rowColToGTP(row: number, col: number, boardSize: number): string {
 
 type AnalysisCache = Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
 
+/** Convert a coordinate token from an LZ property to GTP format.
+ *  LZ coords may be SGF lowercase ("dd") or GTP uppercase ("D16"). */
+function lzCoordToGtp(coord: string, boardSize: number): string {
+  if (!coord || typeof coord !== 'string') return '';
+  const first = coord.charCodeAt(0);
+  if (first >= 65 && first <= 90) {
+    // GTP-style uppercase, e.g. "D16"; validate against the board
+    const col = COL_LETTERS_GTP.indexOf(coord[0]);
+    const row = parseInt(coord.slice(1), 10);
+    if (col >= 0 && row >= 1 && row <= boardSize) return coord;
+    return '';
+  }
+  try {
+    return sgfToGtpCoord(coord, boardSize);
+  } catch {
+    return '';
+  }
+}
+
 /** Parse LZ property from SGF node */
 function parseLZProperty(
   lz: string,
@@ -209,7 +228,8 @@ function parseLZProperty(
       if (tokens.length < 8 || tokens[0] !== 'move') continue;
 
       const sgfCoord = tokens[1];
-      const gtpMove = sgfToGtpCoord(sgfCoord, boardSize);
+      const gtpMove = lzCoordToGtp(sgfCoord, boardSize);
+      if (!gtpMove) continue;
 
       let visits = 0;
       let wr = 0;
@@ -239,7 +259,8 @@ function parseLZProperty(
           case 'pv':
             j++;
             while (j < tokens.length && !['visits', 'winrate', 'prior', 'scoreMean', 'pv', 'info'].includes(tokens[j])) {
-              pv.push(sgfToGtpCoord(tokens[j], boardSize));
+              const c = lzCoordToGtp(tokens[j], boardSize);
+              if (c) pv.push(c);
               j++;
             }
             break;

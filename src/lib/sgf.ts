@@ -1,17 +1,22 @@
 import type { MoveNode, AnalysisInfo } from './go-types';
 
 function gtpToSgfCoord(move: string, boardSize: number): string {
+  if (typeof move !== 'string' || move.length < 2) return '';
   const code = move.charCodeAt(0);
   const colBoard = code > 73 ? code - 66 : code - 65;
   const rowBoard = boardSize - parseInt(move.substring(1), 10);
+  if (rowBoard < 0 || rowBoard >= boardSize) return '';
   return String.fromCharCode(97 + colBoard) + String.fromCharCode(97 + rowBoard);
 }
 
 export function sgfToGtpCoord(coord: string, boardSize: number): string {
+  if (typeof coord !== 'string' || coord.length < 2) return '';
   const colBoard = coord.charCodeAt(0) - 97;
   const rowBoard = coord.charCodeAt(1) - 97;
   const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-  return COL_LETTERS[colBoard] + (boardSize - rowBoard);
+  const col = COL_LETTERS[colBoard];
+  if (!col || rowBoard < 0 || rowBoard >= boardSize) return '';
+  return col + (boardSize - rowBoard);
 }
 
 function escapeSgfText(text: string): string {
