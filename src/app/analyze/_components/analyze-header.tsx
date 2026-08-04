@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import PlayerNameEditor from './player-name-editor';
+import { UserMenu } from './user-menu';
 
 interface AnalyzeHeaderProps {
   boardSize: number;
@@ -53,9 +54,7 @@ export default function AnalyzeHeader({
         )}
       </div>
       <div className="flex items-center gap-2">
-        {userDisplayName && (
-          <span className="text-xs text-[#8B8FA3]">{userDisplayName}</span>
-        )}
+        {userDisplayName && <UserMenu userDisplayName={userDisplayName} onLogout={onLogout} />}
         <button
           onClick={onImportSgf}
           className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#C0C0C0] rounded transition-colors"
@@ -87,12 +86,6 @@ export default function AnalyzeHeader({
           className="px-2.5 py-1 text-xs bg-[#E8B931]/15 hover:bg-[#E8B931]/25 text-[#E8B931] rounded transition-colors"
         >
           云棋谱导入
-        </button>
-        <button
-          onClick={onLogout}
-          className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#FF6B6B]/20 text-[#8B8FA3] hover:text-[#FF6B6B] rounded transition-colors"
-        >
-          退出
         </button>
       </div>
     </header>

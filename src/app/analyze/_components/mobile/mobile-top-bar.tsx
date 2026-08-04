@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown, Play, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { UserMenu } from '../user-menu';
 
 interface MobileTopBarProps {
   gpu: string;
@@ -42,12 +43,7 @@ export function MobileTopBar({
       {/* Left: user name */}
       <div className="flex items-center min-w-0">
         {userDisplayName ? (
-          <button
-            onClick={onLogout}
-            className="text-xs text-[#8B8FA3] hover:text-[#E8B931] transition-colors truncate max-w-[80px]"
-          >
-            {userDisplayName}
-          </button>
+          <UserMenu userDisplayName={userDisplayName} onLogout={onLogout ?? (() => {})} />
         ) : (
           <span className="text-xs text-[#4A4A6A]">未登录</span>
         )}
