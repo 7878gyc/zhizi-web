@@ -160,13 +160,6 @@ export default function HawkEyePanel({
   const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
   const [version, setVersion] = useState(0);
 
-  const analysisDataRef = useRef(analysisData);
-  analysisDataRef.current = analysisData;
-  const winrateRef = useRef(currentWinrate);
-  winrateRef.current = currentWinrate;
-  const movesRef = useRef(gtpMoves);
-  movesRef.current = gtpMoves;
-
   // Populate historyRef from pre-built analysis cache (SGF import / offline mode)
   const populatedCacheRef = useRef<Map<number, { data: AnalysisInfo[]; winrate: number | null }> | undefined>(undefined);
   useEffect(() => {
@@ -185,23 +178,33 @@ export default function HawkEyePanel({
     setVersion(v => v + 1);
   }, [analysisCache]);
 
+  // Reactively sample analysis data: whenever the AI pushes new data
+  // (winrate or candidates change), record it for the current position and
+  // re-derive problem moves immediately.
   useEffect(() => {
     if (!isConnected) return;
+    const posIdx = gtpMoves.length;
+    if (analysisData.length === 0) return;
 
-    const timer = setInterval(() => {
-      const moves = movesRef.current;
-      const posIdx = moves.length;
-      if (analysisDataRef.current.length === 0) return;
-      const record: HawkEyeRecord = {
-        candidates: analysisDataRef.current,
-        winrate: winrateRef.current ?? 0,
-      };
-      historyRef.current.set(posIdx, record);
-      setVersion(v => v + 1);
-    }, 1000);
+    const prev = historyRef.current.get(posIdx);
+    if (prev) {
+      // Skip if nothing meaningful changed (candidates/winrate identical)
+      const winrateChanged = prev.winrate !== (currentWinrate ?? 0);
+      const candidatesChanged = prev.candidates.length !== analysisData.length
+        || prev.candidates.some((c, i) => {
+          const n = analysisData[i];
+          return !n || c.move !== n.move || c.winrate !== n.winrate
+            || c.scoreMean !== n.scoreMean || c.visits !== n.visits;
+        });
+      if (!winrateChanged && !candidatesChanged) return;
+    }
 
-    return () => clearInterval(timer);
-  }, [isConnected]);
+    historyRef.current.set(posIdx, {
+      candidates: analysisData,
+      winrate: currentWinrate ?? 0,
+    });
+    setVersion(v => v + 1);
+  }, [analysisData, currentWinrate, isConnected, gtpMoves.length]);
 
   const results = useMemo(
     () => computeResults(historyRef.current, gtpMoves),

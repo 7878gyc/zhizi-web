@@ -63,7 +63,7 @@ export default function AnalysisPanel({
         <div className="h-3 bg-[#1A1A2E] rounded-full overflow-hidden relative">
           {blackWinrate !== null && (
             <div
-              className="h-full bg-gradient-to-r from-[#4A9EFF] to-[#4A9EFF]/60 transition-all duration-500 ease-out rounded-full"
+              className="h-full bg-gradient-to-r from-[#4A9EFF] to-[#4A9EFF]/60 transition-all duration-75 ease-out rounded-full"
               style={{ width: `${blackWinrate * 100}%` }}
             />
           )}
