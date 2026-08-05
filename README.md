@@ -17,6 +17,11 @@
 - **棋谱云保存**：上传 SGF 到 Cloudflare R2 存储，支持列表查看、下载和删除，用户数据隔离
 - **自动分析**：开启后每 2 秒自动前进下一步，遇到终局自动停止
 - **棋谱导航**：第一手/最后一手、单步前进/后退、5 步快进/快退
+- **贴目输入**：贴目值支持输入框自定义（范围 ±150 目，超出报错并重置默认值），提供 5.5/6.5/7.5 常用选项，桌面与移动端一致
+- **用户菜单**：点击用户名（手机号/邮箱）展开下拉列表——消费记录、充值、退出
+- **消费记录**：弹窗展示当前余额，合并算力使用记录（时长/倍率/GPU/金额）与充值入账记录（充值方式/金额），按时间倒序，金额正负着色
+- **余额充值**：快捷选项 5/10/20/50/100 元 + 自定义金额，微信支付
+- **VIP 充值**：动态加载会员产品（1/3/6/12 个月），卡片选择后创建订单并唤起微信支付，自动轮询支付结果
 - **移动端适配**：<768px 自动切换移动端布局（顶部操作栏、底部菜单、Tab 分析面板）
 
 ## 快速开始
@@ -73,6 +78,14 @@ src/
 │   │   └── fetch-socketio-token/route.ts    # Socket.IO 令牌代理
 │   ├── api/foxwq/route.ts                   # 野狐棋谱爬取代理
 │   ├── api/upload/route.ts                  # R2 预签名上传 URL 生成
+│   ├── api/cluster/
+│   │   ├── balance/route.ts                 # 账户余额代理
+│   │   ├── usage/my-usages/route.ts         # 算力使用记录代理
+│   │   ├── credit/my-credits/route.ts       # 入账记录代理
+│   │   └── product/route.ts                 # 会员产品代理（无鉴权）
+│   ├── api/pay/
+│   │   ├── orders/route.ts                  # 创建支付订单代理
+│   │   └── orders/[orderId]/route.ts        # 订单状态查询代理
 │   ├── api/records/
 │   │   ├── route.ts                         # 棋谱列表 + 保存
 │   │   └── [id]/route.ts                    # 棋谱删除 / 重命名
@@ -86,6 +99,8 @@ src/
 │   │   │   ├── cloud-save-menu.tsx          # SGF 保存菜单
 │   │   │   ├── foxwq-import-dialog.tsx      # 野狐导入弹窗
 │   │   │   ├── player-name-editor.tsx       # 棋手名编辑
+│   │   │   ├── komi-input.tsx               # 贴目输入框（范围校验 + 常用选项）
+│   │   │   ├── user-menu.tsx                # 用户菜单（消费记录/充值/VIP）
 │   │   │   └── mobile/                      # 移动端组件
 │   │   │       ├── mobile-analyze-layout.tsx    # 移动端布局容器
 │   │   │       ├── mobile-top-bar.tsx           # 顶部操作栏
@@ -158,6 +173,12 @@ src/
 | `/api/records/[id]` | DELETE | 删除指定棋谱（R2 文件 + 数据库记录） |
 | `/api/records/[id]` | PATCH | 重命名棋谱记录（覆盖保存时使用） |
 | `/api/records/[id]/download` | GET | 生成棋谱文件下载预签名 URL |
+| `/api/cluster/balance` | GET | 获取账户余额（代理到 zhizigo.com） |
+| `/api/cluster/usage/my-usages` | GET | 获取算力使用记录（消费记录弹窗） |
+| `/api/cluster/credit/my-credits` | GET | 获取入账/充值记录 |
+| `/api/cluster/product` | GET | 获取会员产品列表（无鉴权） |
+| `/api/pay/orders` | POST | 创建微信 Native 支付订单（充值/VIP） |
+| `/api/pay/orders/[orderId]` | GET | 查询支付订单状态（轮询支付结果） |
 
 ## 棋谱云保存
 
