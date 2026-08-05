@@ -67,29 +67,29 @@ export function MobileGameInfoTab({
       </div>
 
       {/* Player names */}
-      <div className="space-y-3">
-        <div className="space-y-1.5">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5 min-w-0">
           <Label className="text-xs text-[#8B8FA3]">黑棋棋手</Label>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-white border border-[#666] shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <div className="w-3.5 h-3.5 rounded-full bg-white border border-[#666] shrink-0" />
             <Input
               value={blackName}
               onChange={(e) => onBlackNameChange(e.target.value)}
               placeholder="输入黑棋棋手名"
-              className="h-8 text-xs bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A] focus-visible:ring-[#E8B931]/30"
+              className="h-8 text-xs bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A] focus-visible:ring-[#E8B931]/30 min-w-0"
             />
           </div>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <Label className="text-xs text-[#8B8FA3]">白棋棋手</Label>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-[#1a1a1a] border border-[#999] shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <div className="w-3.5 h-3.5 rounded-full bg-[#1a1a1a] border border-[#999] shrink-0" />
             <Input
               value={whiteName}
               onChange={(e) => onWhiteNameChange(e.target.value)}
               placeholder="输入白棋棋手名"
-              className="h-8 text-xs bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A] focus-visible:ring-[#E8B931]/30"
+              className="h-8 text-xs bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A] focus-visible:ring-[#E8B931]/30 min-w-0"
             />
           </div>
         </div>
