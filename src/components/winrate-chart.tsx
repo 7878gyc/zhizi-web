@@ -79,7 +79,7 @@ export default function WinrateChart({
     ctx.fillText('50', plotLeft - 4, plotTop + plotHeight * 0.5);
     ctx.fillText('0', plotLeft - 4, plotBottom);
 
-    if (numPoints < 1 || dataPoints.every(v => v === null)) {
+    if (numPoints < 1) {
       // No data yet
       ctx.fillStyle = '#4A4A6A';
       ctx.font = '11px sans-serif';
@@ -103,20 +103,29 @@ export default function WinrateChart({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Compute valid points for drawing
-    const validPoints: { x: number; y: number; moveIdx: number }[] = [];
+    // Group analyzed points into contiguous segments, breaking at null gaps.
+    // This way a partial analysis (not starting from move 1) still renders
+    // whatever has been analyzed so far.
+    const segments: { x: number; y: number; moveIdx: number }[][] = [];
+    let curSegment: { x: number; y: number; moveIdx: number }[] = [];
     for (let i = 0; i < numPoints; i++) {
       const wr = dataPoints[i];
-      if (wr === null || wr === undefined) continue;
-      // wr is 0-1 representing the current player's winrate
-      // For black perspective display: 100% = top, 0% = bottom
-      // We show black's winrate, so if wr is from black's perspective, y = top when wr=1
+      if (wr === null || wr === undefined) {
+        if (curSegment.length) {
+          segments.push(curSegment);
+          curSegment = [];
+        }
+        continue;
+      }
+      // wr is 0-1 representing the current player's winrate.
+      // Displayed from black's perspective: 1 → top, 0 → bottom.
       const x = plotLeft + (i + 0.5) * xStep;
-      const y = plotBottom - wr * plotHeight; // 1→top, 0→bottom
-      validPoints.push({ x, y, moveIdx: i });
+      const y = plotBottom - wr * plotHeight;
+      curSegment.push({ x, y, moveIdx: i });
     }
+    if (curSegment.length) segments.push(curSegment);
 
-    if (validPoints.length < 1) {
+    if (segments.length === 0) {
       ctx.fillStyle = '#4A4A6A';
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
@@ -125,31 +134,46 @@ export default function WinrateChart({
       return;
     }
 
-    // Fill area under curve
-    ctx.beginPath();
-    ctx.moveTo(validPoints[0].x, plotBottom);
-    for (const p of validPoints) {
-      ctx.lineTo(p.x, p.y);
-    }
-    ctx.lineTo(validPoints[validPoints.length - 1].x, plotBottom);
-    ctx.closePath();
+    for (const seg of segments) {
+      if (seg.length >= 2) {
+        // Fill area under curve
+        ctx.beginPath();
+        ctx.moveTo(seg[0].x, plotBottom);
+        for (const p of seg) {
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.lineTo(seg[seg.length - 1].x, plotBottom);
+        ctx.closePath();
 
-    const gradient = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
-    gradient.addColorStop(0, 'rgba(74, 158, 255, 0.15)');
-    gradient.addColorStop(0.5, 'rgba(74, 158, 255, 0.02)');
-    gradient.addColorStop(1, 'rgba(255, 107, 107, 0.15)');
-    ctx.fillStyle = gradient;
-    ctx.fill();
+        const gradient = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
+        gradient.addColorStop(0, 'rgba(74, 158, 255, 0.15)');
+        gradient.addColorStop(0.5, 'rgba(74, 158, 255, 0.02)');
+        gradient.addColorStop(1, 'rgba(255, 107, 107, 0.15)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
 
-    // Draw line
-    ctx.beginPath();
-    ctx.moveTo(validPoints[0].x, validPoints[0].y);
-    for (let i = 1; i < validPoints.length; i++) {
-      ctx.lineTo(validPoints[i].x, validPoints[i].y);
+        // Draw line
+        ctx.beginPath();
+        ctx.moveTo(seg[0].x, seg[0].y);
+        for (let i = 1; i < seg.length; i++) {
+          ctx.lineTo(seg[i].x, seg[i].y);
+        }
+        ctx.strokeStyle = '#E8B931';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        // Single analyzed point (partial analysis): draw a visible dot
+        const p = seg[0];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232, 185, 49, 0.25)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#E8B931';
+        ctx.fill();
+      }
     }
-    ctx.strokeStyle = '#E8B931';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
 
     // Current move indicator
     // currentMoveNumber is the number of moves played (0=root, 1=first move, etc.)
