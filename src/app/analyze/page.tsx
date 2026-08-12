@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import GoBoard from '@/components/go-board';
 import AiConfigPanel from '@/components/ai-config-panel';
 import AnalysisPanel from '@/components/analysis-panel';
@@ -761,7 +762,7 @@ export default function AnalyzePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F0F23] text-[#E0E0E0]">
+    <div className="min-h-screen bg-[#0F0F23] text-[#E0E0E0] flex flex-col">
       <AnalyzeHeader
         boardSize={boardSize}
         currentPlayer={currentPlayer}
@@ -807,7 +808,7 @@ export default function AnalyzePage() {
       />
 
       {/* Main content */}
-      <div className="flex h-[calc(100vh-48px)]">
+      <div className="flex flex-1 min-h-0">
         {/* Left: Board area */}
         <div className="flex-1 flex flex-col items-center justify-center p-4 min-w-0">
           <GoBoard
@@ -922,6 +923,16 @@ export default function AnalyzePage() {
           />
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="h-7 shrink-0 flex items-center justify-center gap-5 text-xs text-[#8B8FA3] border-t border-[#2A3A5C]/40">
+        <Link href="/about" className="hover:text-[#E8B931] transition-colors">
+          关于
+        </Link>
+        <Link href="/privacy/human" className="hover:text-[#E8B931] transition-colors">
+          隐私与服务声明
+        </Link>
+      </footer>
 
       <KataGoLogViewer logs={logs} />
     </div>
