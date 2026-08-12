@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown, Play, Square } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { UserMenu } from '../user-menu';
 
@@ -47,6 +48,12 @@ export function MobileTopBar({
         ) : (
           <span className="text-xs text-[#4A4A6A]">未登录</span>
         )}
+        <Link
+          href="/about"
+          className="ml-2 text-xs text-[#8B8FA3] hover:text-[#E8B931] transition-colors"
+        >
+          关于
+        </Link>
       </div>
 
       {/* Center: GPU + Weight dropdowns */}

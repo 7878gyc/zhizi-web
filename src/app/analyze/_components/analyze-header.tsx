@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
+import Link from 'next/link';
 import PlayerNameEditor from './player-name-editor';
 import { UserMenu } from './user-menu';
 
@@ -87,6 +88,12 @@ export default function AnalyzeHeader({
         >
           云棋谱导入
         </button>
+        <Link
+          href="/about"
+          className="px-2.5 py-1 text-xs bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#C0C0C0] rounded transition-colors"
+        >
+          关于
+        </Link>
       </div>
     </header>
   );
