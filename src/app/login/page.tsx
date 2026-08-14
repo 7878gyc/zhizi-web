@@ -202,9 +202,9 @@ export default function LoginPage() {
                   : 'text-[#8B8FA3] hover:text-white'
               }`}
             >
-              验证码登录
-            </button>
-          </div>
+               验证码登录/注册
+              </button>
+            </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
@@ -273,7 +273,7 @@ export default function LoginPage() {
                   登录中...
                 </span>
               ) : (
-                '登录'
+                authMode === 'code' ? '登录 / 注册' : '登录'
               )}
             </Button>
           </div>
