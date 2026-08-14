@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'zhizi_token';
+export const TOKEN_KEY = 'zhizi_token';
 const USER_KEY = 'zhizi_user';
 
 export function saveToken(token: string): void {

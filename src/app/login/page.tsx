@@ -65,7 +65,7 @@ export default function LoginPage() {
 
       if (data.token) {
         saveToken(data.token);
-        router.push('/');
+        router.push('/analyze');
       } else {
         setError('登录返回异常，未获取到令牌');
       }
