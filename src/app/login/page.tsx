@@ -1,15 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { saveToken } from '@/lib/auth';
+import { isLoggedIn, saveToken } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // 已登录用户不应停留在登录页，直接进入分析页
+  useEffect(() => {
+    if (isLoggedIn()) {
+      router.replace('/analyze');
+    }
+  }, [router]);
+
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
   const [authMode, setAuthMode] = useState<'password' | 'code'>('password');
   const [account, setAccount] = useState('');
