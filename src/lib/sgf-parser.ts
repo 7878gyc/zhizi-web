@@ -326,7 +326,34 @@ function sgfNodeToMoveNode(
   }
 
   if (!moveCoord || !color) return null;
-  if (moveCoord === '' || moveCoord === 'tt') return null;
+  if (moveCoord === '' || moveCoord === 'tt') {
+    // Pass move (or invalid coord): skip the node itself but keep its children,
+    // replaying them at the same moveNumber so the game line is preserved.
+    if (sgfNode.children.length === 0) return null;
+    const firstChild = sgfNodeToMoveNode(
+      sgfNode.children[0],
+      parentId,
+      moveNumber,
+      boardSize,
+      nextColor,
+      analysisCache,
+    );
+    if (!firstChild) return null;
+    for (let i = 1; i < sgfNode.children.length; i++) {
+      const branch = sgfNodeToMoveNode(
+        sgfNode.children[i],
+        parentId,
+        moveNumber,
+        boardSize,
+        nextColor,
+        analysisCache,
+      );
+      if (branch) {
+        firstChild.children.push(branch);
+      }
+    }
+    return firstChild;
+  }
 
   const pos = sgfCoordToRowCol(moveCoord, boardSize);
   if (!pos) return null;

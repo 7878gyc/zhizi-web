@@ -10,6 +10,9 @@
     "lint:build": "eslint . --quiet",
     "start": "next start",
     "ts-check": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'"
   },
   "dependencies": {
@@ -73,18 +76,24 @@
   "devDependencies": {
     "@react-dev-inspector/babel-plugin": "^2.0.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ssh2": "^1.15.5",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "jsdom": "^30.0.1",
     "only-allow": "^1.2.2",
     "prisma": "^5.22.0",
     "react-dev-inspector": "^2.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
