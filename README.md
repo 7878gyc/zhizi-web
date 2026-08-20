@@ -52,12 +52,15 @@ pnpm dev
 pnpm build
 ```
 
-### 代码检查
+### 代码检查与测试
 
 ```bash
 pnpm ts-check         # TypeScript 类型检查
 pnpm lint             # ESLint 检查
 pnpm validate         # 同时运行 ts-check + lint:build
+pnpm test             # 运行单元测试（vitest）
+pnpm test:watch       # 监听模式运行单元测试
+pnpm test:coverage    # 运行单元测试并输出覆盖率报告
 npx prisma db push    # 数据库迁移（首次部署）
 npx prisma generate   # 重新生成 Prisma Client
 npx prisma studio     # 数据库可视化浏览
@@ -68,6 +71,9 @@ npx prisma studio     # 数据库可视化浏览
 ```
 prisma/
 └── schema.prisma                            # Prisma 数据模型（Record）
+vitest.config.ts                             # Vitest 测试配置（jsdom + @/ 别名）
+vitest.setup.ts                              # Vitest 测试初始化（jest-dom 断言）
+src/server.ts                                # 自定义 Next.js HTTP 服务器（端口 5000）
 src/
 ├── app/
 │   ├── api/auth/
@@ -128,7 +134,9 @@ src/
 ├── hooks/
 │   ├── use-go-game.ts            # 围棋游戏核心逻辑 Hook
 │   ├── use-mobile.ts             # 移动端断点检测 Hook
-│   └── use-zhizi-analysis.ts     # Socket.IO 连接与分析 Hook
+│   ├── use-zhizi-analysis.ts     # Socket.IO 连接与分析 Hook
+│   └── __tests__/                # Hook 单元测试
+│       └── use-go-game.test.tsx  # 围棋游戏逻辑测试（落子/提子/悔棋/胜率）
 └── lib/
     ├── go-types.ts               # 围棋类型定义、坐标转换、分析数据解析
     ├── sgf.ts                    # SGF 生成（含 LZ/注释属性）、坐标转换
@@ -137,7 +145,13 @@ src/
     ├── auth-server.ts            # 服务端认证（extractUserHash + SHA256）
     ├── prisma.ts                 # PrismaClient 单例
     ├── r2-client.ts              # Cloudflare R2 S3 客户端
-    └── utils.ts                  # 通用工具函数
+    ├── utils.ts                  # 通用工具函数
+    └── __tests__/                # 纯逻辑单元测试
+        ├── go-types.test.ts      # 坐标转换 / info 解析 / 落子树工具
+        ├── sgf.test.ts           # SGF 生成与 LZ 属性
+        ├── sgf-parser.test.ts    # SGF 解析（分支 / LZ 分析数据）
+        ├── auth.test.ts          # Token 管理
+        └── auth-server.test.ts   # 服务端认证与哈希
 ```
 
 ## 技术栈
@@ -155,6 +169,7 @@ src/
 | 对象存储 | Cloudflare R2 (S3 兼容) |
 | 图标 | Lucide React |
 | 表单 | React Hook Form + Zod |
+| 测试 | Vitest + Testing Library |
 | 包管理 | pnpm |
 
 ## API 端点
