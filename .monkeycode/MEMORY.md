@@ -28,3 +28,13 @@
   - 以后默认每次代码修改完成、验证通过后，自动执行 git add + commit + push 到 origin/main（无需再逐次询问）
   - 提交使用仓库历史一致的作者身份：user2701323525 <467755821698729-user2701323525@noreply.coze.cn>
   - 提交信息保持仓库风格（feat:/fix:/chore: 前缀 + 中文描述）
+  - 说明：当前 origin 为 github.com/7878gyc/zhizi-web，历史提交作者实际为 7878gyc <monkeycode-ai@chaitin.com>；提交时以当前仓库历史作者为准。
+
+[Project Knowledge Summary]
+- Date: 2026-10-10
+- Context: Discovered by Agent while verifying changes（运行 pnpm build）
+- Category: Build Methods
+- Instructions:
+  - `pnpm build` 在缺少 R2_* 环境变量时会在 "Collecting page data" 阶段失败：`src/lib/r2-client.ts` 在模块加载时用 requireEnv 校验 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET_NAME，缺失即抛错。
+  - 无法提供 R2 环境变量时，可用 `pnpm ts-check` + `pnpm test` + `pnpm lint:build`（或 `pnpm validate`）验证改动。
+  - 首次验证前需先 `pnpm install`。
