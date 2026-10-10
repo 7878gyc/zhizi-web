@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { AnalysisInfo, AiConfig } from '@/lib/go-types';
 import { buildArgsString, parseInfoLine } from '@/lib/go-types';
+import { mapZhiziError } from '@/lib/zhizi-errors';
 
 interface UseZhiziAnalysisReturn {
   analysisData: AnalysisInfo[];
@@ -249,7 +250,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         const data = await resp.json().catch(() => null);
         if (gen !== generationRef.current || closedByUserRef.current) return;
         if (!resp.ok || !data?.token || !data?.socketIOURL) {
-          setError(data?.error || data?.key || data?.message || '获取 WebSocket 令牌失败');
+          setError(mapZhiziError(data, '获取 WebSocket 令牌失败'));
           setIsConnecting(false);
           return;
         }

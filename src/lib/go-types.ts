@@ -11,6 +11,8 @@ export interface MoveNode {
   move: string;            // GTP坐标 如 "Q16"，根节点为 "root"
   color: 'black' | 'white' | null; // 根节点为null
   capturedStones?: GoStone[];
+  /** 仅根节点：SGF 的 AB/AW 预置子（GTP 坐标），用于让子 */
+  handicapStones?: { move: string; color: 'black' | 'white' }[];
   winrate?: number;        // 该手分析后的胜率（黑方视角 0-1）
   children: MoveNode[];    // 子分支（从左到右，第一个为主分支）
   parentId: string | null;

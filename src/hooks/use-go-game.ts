@@ -89,6 +89,20 @@ function replayBoardFromPath(
   const board = createEmptyBoard(boardSize);
   let nextPlayer: 'black' | 'white' = 'black';
 
+  // 预置子（让子 / 加子）：置于盘面，黑方有让子时由白方先行
+  const root = path[0];
+  if (root?.handicapStones && root.handicapStones.length > 0) {
+    for (const stone of root.handicapStones) {
+      const { row, col } = gtpToCoord(stone.move, boardSize);
+      if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
+        board[row][col] = stone.color;
+      }
+    }
+    if (root.handicapStones.some((s) => s.color === 'black')) {
+      nextPlayer = 'white';
+    }
+  }
+
   // Skip root (index 0)
   for (let i = 1; i < path.length; i++) {
     const node = path[i];

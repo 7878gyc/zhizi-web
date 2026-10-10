@@ -7,21 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { fetchCurrentUser, saveUser } from '@/lib/auth';
+import { mapZhiziError } from '@/lib/zhizi-errors';
 
-// 官方错误 key -> 面向用户的本地文案，避免直接把 key 展示给用户。
-const LOGIN_ERROR_MESSAGES: Record<string, string> = {
-  invalid_password: '密码错误',
-  invalid_verification_code: '验证码错误或过期',
-  fast_login_too_frequent: '尝试过于频繁，请稍后再试',
-};
+type AuthMode = 'password' | 'code' | 'register' | 'reset';
 
-function mapAuthError(
-  data: { key?: string; message?: string; error?: string } | null,
-  fallback: string,
-): string {
-  if (data?.key && LOGIN_ERROR_MESSAGES[data.key]) return LOGIN_ERROR_MESSAGES[data.key];
-  return data?.message || data?.error || fallback;
-}
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,43 +28,79 @@ export default function LoginPage() {
   }, [router]);
 
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
-  const [authMode, setAuthMode] = useState<'password' | 'code'>('password');
+  const [authMode, setAuthMode] = useState<AuthMode>('password');
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
-  const handleLogin = async () => {
+  const isRegister = authMode === 'register';
+  const isReset = authMode === 'reset';
+  const needsPasswordField = authMode === 'password' || isRegister || isReset;
+  const needsCodeField = authMode === 'code' || isRegister || isReset;
+
+  const sendCodeType =
+    authMode === 'register' ? 'register' : authMode === 'reset' ? 'reset_password' : 'fast_login';
+
+  const switchMode = (mode: AuthMode) => {
+    setAuthMode(mode);
     setError('');
-    if (authMode === 'password') {
-      if (!account || !password) {
-        setError('请填写账号和密码');
-        return;
-      }
-    } else {
-      if (!account || !verificationCode) {
-        setError('请填写账号和验证码');
-        return;
-      }
+    setSuccessMsg('');
+    setPassword('');
+    setVerificationCode('');
+    setCodeSent(false);
+    setCountdown(0);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    setSuccessMsg('');
+
+    if (!account) {
+      setError(loginType === 'phone' ? '请填写手机号' : '请填写邮箱');
+      return;
     }
+    if (needsCodeField && !verificationCode) {
+      setError('请填写验证码');
+      return;
+    }
+    if (authMode === 'password' && !password) {
+      setError('请填写密码');
+      return;
+    }
+    if ((isRegister || isReset) && password.length < MIN_PASSWORD_LENGTH) {
+      setError(`密码至少 ${MIN_PASSWORD_LENGTH} 位`);
+      return;
+    }
+
     setLoading(true);
     try {
-      let body: Record<string, string>;
+      const accountField: Record<string, string> = loginType === 'phone' ? { phone: account } : { email: account };
       let endpoint = '/api/auth/login';
+      let body: Record<string, string> = { ...accountField };
 
-      if (authMode === 'password') {
-        body = loginType === 'phone'
-          ? { phone: account, password }
-          : { email: account, password };
-      } else {
-        endpoint = '/api/auth/fast-login';
-        body = loginType === 'phone'
-          ? { phone: account, verificationCode }
-          : { email: account, verificationCode };
+      switch (authMode) {
+        case 'password':
+          endpoint = '/api/auth/login';
+          body = { ...accountField, password };
+          break;
+        case 'code':
+          endpoint = '/api/auth/fast-login';
+          body = { ...accountField, verificationCode };
+          break;
+        case 'register':
+          endpoint = '/api/cluster/account/register';
+          body = { ...accountField, verificationCode, password };
+          break;
+        case 'reset':
+          endpoint = '/api/cluster/account/reset-password';
+          body = { ...accountField, verificationCode, password };
+          break;
       }
 
       const resp = await fetch(endpoint, {
@@ -82,16 +108,29 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-
-      const data = await resp.json();
+      const data = await resp.json().catch(() => null);
 
       if (!resp.ok) {
-        setError(mapAuthError(data, '登录失败'));
+        const fallback = isRegister ? '注册失败' : isReset ? '重置密码失败' : '登录失败';
+        setError(mapZhiziError(data, fallback));
         return;
       }
 
-      // 会话 token 由后端写入 httpOnly Cookie，前端只缓存展示信息。
-      saveUser(data as Record<string, unknown>);
+      if (isRegister) {
+        // 注册接口不一定自动登录：能拿到会话就进分析页，否则回到密码登录。
+        const user = await fetchCurrentUser();
+        if (user) {
+          saveUser(user);
+          router.push('/analyze');
+        } else {
+          switchMode('password');
+          setSuccessMsg('注册成功，请使用密码登录');
+        }
+        return;
+      }
+
+      // 密码登录 / 验证码登录 / 找回密码成功后，会话 token 已由后端写入 Cookie
+      if (data && typeof data === 'object') saveUser(data as Record<string, unknown>);
       router.push('/analyze');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '网络错误');
@@ -109,19 +148,18 @@ export default function LoginPage() {
     setSendingCode(true);
     try {
       const body = loginType === 'phone'
-        ? { phone: account, type: 'fast_login' }
-        : { email: account, type: 'fast_login' };
+        ? { phone: account, type: sendCodeType }
+        : { email: account, type: sendCodeType };
 
       const resp = await fetch('/api/auth/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-
-      const data = await resp.json();
+      const data = await resp.json().catch(() => null);
 
       if (!resp.ok) {
-        setError(mapAuthError(data, '发送验证码失败'));
+        setError(mapZhiziError(data, '发送验证码失败'));
         return;
       }
 
@@ -142,6 +180,13 @@ export default function LoginPage() {
       setSendingCode(false);
     }
   };
+
+  const submitLabel = isRegister ? '注册' : isReset ? '重置密码' : authMode === 'code' ? '登录 / 注册' : '登录';
+  const headerHint = isRegister
+    ? '设置至少 8 位密码完成注册'
+    : isReset
+      ? '验证后设置新密码'
+      : '';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#1A1A2E] relative overflow-hidden">
@@ -206,29 +251,49 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Auth mode tabs */}
-          <div className="flex mb-6 bg-[#1A1A2E]/50 rounded-lg p-1">
-            <button
-              onClick={() => { setAuthMode('password'); setError(''); }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
-                authMode === 'password'
-                  ? 'bg-[#2A3A5C] text-white'
-                  : 'text-[#8B8FA3] hover:text-white'
-              }`}
-            >
-              密码登录
-            </button>
-            <button
-              onClick={() => { setAuthMode('code'); setError(''); }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
-                authMode === 'code'
-                  ? 'bg-[#2A3A5C] text-white'
-                  : 'text-[#8B8FA3] hover:text-white'
-              }`}
-            >
-               验证码登录/注册
+          {/* Auth mode tabs (primary flows) */}
+          {(authMode === 'password' || authMode === 'code') && (
+            <div className="flex mb-6 bg-[#1A1A2E]/50 rounded-lg p-1">
+              <button
+                onClick={() => switchMode('password')}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
+                  authMode === 'password'
+                    ? 'bg-[#2A3A5C] text-white'
+                    : 'text-[#8B8FA3] hover:text-white'
+                }`}
+              >
+                密码登录
+              </button>
+              <button
+                onClick={() => switchMode('code')}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${
+                  authMode === 'code'
+                    ? 'bg-[#2A3A5C] text-white'
+                    : 'text-[#8B8FA3] hover:text-white'
+                }`}
+              >
+                验证码登录
               </button>
             </div>
+          )}
+
+          {(isRegister || isReset) && (
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm text-[#E8B931] font-medium">
+                {isRegister ? '注册账号' : '找回密码'}
+              </span>
+              <button
+                onClick={() => switchMode('password')}
+                className="text-xs text-[#8B8FA3] hover:text-white"
+              >
+                返回登录
+              </button>
+            </div>
+          )}
+
+          {headerHint && (
+            <p className="text-xs text-[#8B8FA3] mb-4">{headerHint}</p>
+          )}
 
           <div className="space-y-4">
             <div className="space-y-2">
@@ -241,23 +306,11 @@ export default function LoginPage() {
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
                 className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
               />
             </div>
 
-            {authMode === 'password' ? (
-              <div className="space-y-2">
-                <Label className="text-[#8B8FA3] text-xs">密码</Label>
-                <Input
-                  type="password"
-                  placeholder="请输入密码"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-                />
-              </div>
-            ) : (
+            {needsCodeField && (
               <div className="space-y-2">
                 <Label className="text-[#8B8FA3] text-xs">验证码</Label>
                 <div className="flex gap-2">
@@ -267,7 +320,7 @@ export default function LoginPage() {
                     value={verificationCode}
                     onChange={(e) => setVerificationCode(e.target.value)}
                     className="flex-1 bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
                   />
                   <Button
                     onClick={handleSendCode}
@@ -280,26 +333,66 @@ export default function LoginPage() {
               </div>
             )}
 
+            {needsPasswordField && (
+              <div className="space-y-2">
+                <Label className="text-[#8B8FA3] text-xs">
+                  {isRegister || isReset ? `密码（至少 ${MIN_PASSWORD_LENGTH} 位）` : '密码'}
+                </Label>
+                <Input
+                  type="password"
+                  placeholder={isRegister || isReset ? `请设置至少 ${MIN_PASSWORD_LENGTH} 位密码` : '请输入密码'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white placeholder:text-[#4A4A6A] focus:border-[#E8B931] focus:ring-[#E8B931]/20"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+                />
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-md px-3 py-2 text-red-400 text-sm">
                 {error}
               </div>
             )}
 
+            {successMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-md px-3 py-2 text-emerald-400 text-sm">
+                {successMsg}
+              </div>
+            )}
+
             <Button
-              onClick={handleLogin}
+              onClick={handleSubmit}
               disabled={loading}
               className="w-full bg-[#E8B931] hover:bg-[#D4A52A] text-[#1A1A2E] font-semibold h-11 transition-all"
             >
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-[#1A1A2E]/30 border-t-[#1A1A2E] rounded-full animate-spin" />
-                  登录中...
+                  处理中...
                 </span>
               ) : (
-                authMode === 'code' ? '登录 / 注册' : '登录'
+                submitLabel
               )}
             </Button>
+
+            {authMode === 'password' && (
+              <div className="flex items-center justify-center gap-4 pt-1">
+                <button
+                  onClick={() => switchMode('register')}
+                  className="text-xs text-[#8B8FA3] hover:text-[#E8B931] transition-colors"
+                >
+                  注册账号
+                </button>
+                <span className="text-[#2A3A5C]">|</span>
+                <button
+                  onClick={() => switchMode('reset')}
+                  className="text-xs text-[#8B8FA3] hover:text-[#E8B931] transition-colors"
+                >
+                  找回密码
+                </button>
+              </div>
+            )}
           </div>
 
           <p className="text-center text-[#4A4A6A] text-xs mt-6">

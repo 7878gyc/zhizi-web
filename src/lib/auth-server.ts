@@ -30,7 +30,16 @@ export async function extractUserHash(request: Request): Promise<string> {
     throw new AuthError('Token 无效或已过期', 401);
   }
 
-  const data = await resp.json();
+  // 官方 token 失效时返回 401 + 纯文本 "Not Authorized"；先读 text 再尝试 parse，
+  // 避免 resp.json() 抛错被上层 catch 成 500。
+  const text = await resp.text();
+  let data: { phone?: unknown; email?: unknown };
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new AuthError('认证服务返回异常', 502);
+  }
+
   const identifier = data.phone || data.email;
 
   if (!identifier || typeof identifier !== 'string') {

@@ -423,6 +423,17 @@ export function sgfToMoveTree(sgfText: string): {
     nodeCount = 0;
     const { root, boardSize, komi, rules, playerBlack, playerWhite } = parseSgf(sgfText);
 
+    // 预置子（让子 / 加子）：AB 为黑、AW 为白，从根节点抽出供棋盘与 GTP 同步使用
+    const handicapStones: { move: string; color: 'black' | 'white' }[] = [];
+    for (const coord of root.properties.AB ?? []) {
+      const pos = sgfCoordToRowCol(coord, boardSize);
+      if (pos) handicapStones.push({ move: rowColToGTP(pos.row, pos.col, boardSize), color: 'black' });
+    }
+    for (const coord of root.properties.AW ?? []) {
+      const pos = sgfCoordToRowCol(coord, boardSize);
+      if (pos) handicapStones.push({ move: rowColToGTP(pos.row, pos.col, boardSize), color: 'white' });
+    }
+
     const rootNode: MoveNode = {
       id: 'root',
       move: 'root',
@@ -430,6 +441,7 @@ export function sgfToMoveTree(sgfText: string): {
       children: [],
       parentId: null,
       moveNumber: 0,
+      ...(handicapStones.length > 0 ? { handicapStones } : {}),
     };
 
     const analysisCache: AnalysisCache = new Map();

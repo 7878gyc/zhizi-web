@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { ChevronDown, ChevronRight, Loader2, Wallet, CreditCard, LogOut, Crown, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Wallet, CreditCard, LogOut, Crown, RefreshCw, KeyRound, Smartphone } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { fetchCurrentUser } from '@/lib/auth';
+import { mapZhiziError } from '@/lib/zhizi-errors';
 
 // ---------- Types ----------
 
@@ -68,8 +70,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     data = null;
   }
   if (!resp.ok) {
-    const err = data as { error?: string; key?: string } | null;
-    throw new Error(err?.error || err?.key || `请求失败 (${resp.status})`);
+    const err = data as { error?: string; key?: string; message?: string } | null;
+    throw new Error(mapZhiziError(err, `请求失败 (${resp.status})`));
   }
   return data as T;
 }
@@ -450,12 +452,29 @@ function VipDialog({ open, onClose }: VipDialogProps) {
           </div>
         )}
 
-        {payError && <p className="text-xs text-[#FF6B6B] mb-3">{payError}</p>}
+        {payError && payStatus !== 'FAIL' && <p className="text-xs text-[#FF6B6B] mb-3">{payError}</p>}
 
         {payStatus === 'SUCCESS' ? (
           <div className="py-8 text-center">
             <div className="text-lg font-bold text-[#4ADE80] mb-1">支付成功</div>
             <div className="text-xs text-[#8B8FA3]">VIP 会员已开通</div>
+          </div>
+        ) : payStatus === 'FAIL' ? (
+          <div className="py-6 text-center space-y-3">
+            <p className="text-xs text-[#FF6B6B]">{payError || '支付失败，请重试'}</p>
+            <button
+              onClick={handlePay}
+              disabled={!selected || paying}
+              className="w-full px-3 py-2.5 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {paying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> 创建订单中...
+                </>
+              ) : (
+                '重新下单'
+              )}
+            </button>
           </div>
         ) : loading ? (
           <div className="py-10 text-center text-[#8B8FA3] text-sm flex items-center justify-center gap-2">
@@ -609,12 +628,31 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
         <div className="pb-4 border-b border-[#2A3A5C]/50">
           <h3 className="text-sm font-bold text-[#E8B931] mb-3">充值余额</h3>
 
-          {payError && <p className="text-xs text-[#FF6B6B] mb-3">{payError}</p>}
+          {payError && payStatus !== 'FAIL' && <p className="text-xs text-[#FF6B6B] mb-3">{payError}</p>}
 
           {payStatus === 'SUCCESS' ? (
             <div className="py-6 text-center">
               <div className="text-lg font-bold text-[#4ADE80] mb-1">支付成功</div>
               <div className="text-xs text-[#8B8FA3]">余额已到账</div>
+            </div>
+          ) : payStatus === 'FAIL' ? (
+            <div className="py-6 text-center space-y-3">
+              <p className="text-xs text-[#FF6B6B]">{payError || '支付失败，请重试'}</p>
+              <button
+                onClick={handlePay}
+                disabled={paying}
+                className="w-full px-3 py-2.5 text-sm font-medium bg-[#07C160] hover:bg-[#06AD56] text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {paying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> 创建订单中...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-4 h-4" /> 重新下单
+                  </>
+                )}
+              </button>
             </div>
           ) : orderId && payStatus === 'PENDING' && codeURL ? (
             <div className="py-2">
@@ -711,6 +749,287 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
   );
 }
 
+// ---------- Account: change password ----------
+
+const MIN_PASSWORD_LENGTH = 8;
+
+interface ChangePasswordDialogProps {
+  open: boolean;
+  onClose: () => void;
+  /** 改密成功后官方不返回新 token，需要重新登录。 */
+  onChanged: () => void;
+}
+
+function ChangePasswordDialog({ open, onClose, onChanged }: ChangePasswordDialogProps) {
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setError('');
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    setError('');
+    if (!oldPassword) {
+      setError('请输入原密码');
+      return;
+    }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`新密码至少 ${MIN_PASSWORD_LENGTH} 位`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('两次输入的新密码不一致');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api('/api/cluster/account/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword }),
+      });
+      onChanged();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '修改密码失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
+      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+        <h3 className="text-sm font-bold text-[#E8B931] mb-3">修改密码</h3>
+
+        <div className="space-y-3">
+          <Input
+            type="password"
+            value={oldPassword}
+            onChange={(e) => setOldPassword(e.target.value)}
+            placeholder="原密码"
+            className="h-9 w-full text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A]"
+          />
+          <Input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder={`新密码（至少 ${MIN_PASSWORD_LENGTH} 位）`}
+            className="h-9 w-full text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A]"
+          />
+          <Input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="确认新密码"
+            className="h-9 w-full text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A]"
+          />
+        </div>
+
+        {error && <p className="text-xs text-[#FF6B6B] mt-3">{error}</p>}
+        <p className="text-[10px] text-[#8B8FA3] mt-3">修改成功后需要重新登录。</p>
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting}
+            className="flex-1 px-3 py-2 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认修改'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Account: change phone / email ----------
+
+interface ChangePhoneDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
+  const [contactType, setContactType] = useState<'phone' | 'email'>('phone');
+  const [newAccount, setNewAccount] = useState('');
+  const [code, setCode] = useState('');
+  const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setContactType('phone');
+      setNewAccount('');
+      setCode('');
+      setError('');
+      setDone(false);
+      setSubmitting(false);
+      setSending(false);
+      setCountdown(0);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const accountField: Record<string, string> = contactType === 'phone' ? { phone: newAccount } : { email: newAccount };
+
+  const sendCode = async () => {
+    setError('');
+    if (!newAccount) {
+      setError(contactType === 'phone' ? '请输入新手机号' : '请输入新邮箱');
+      return;
+    }
+    setSending(true);
+    try {
+      await api('/api/auth/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ ...accountField, type: 'change_phone' }),
+      });
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '发送验证码失败');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const submit = async () => {
+    setError('');
+    if (!newAccount) {
+      setError(contactType === 'phone' ? '请输入新手机号' : '请输入新邮箱');
+      return;
+    }
+    if (!code) {
+      setError('请输入验证码');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api('/api/cluster/account/change-phone', {
+        method: 'POST',
+        body: JSON.stringify({ ...accountField, verificationCode: code }),
+      });
+      await fetchCurrentUser();
+      setDone(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '更换失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
+      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+        <h3 className="text-sm font-bold text-[#E8B931] mb-3">更换手机 / 邮箱</h3>
+
+        {done ? (
+          <div className="py-6 text-center">
+            <div className="text-lg font-bold text-[#4ADE80] mb-1">更换成功</div>
+            <div className="text-xs text-[#8B8FA3]">下次登录请使用新的账号</div>
+          </div>
+        ) : (
+          <>
+            <div className="flex mb-3 bg-[#1A1A2E]/50 rounded-lg p-1">
+              <button
+                onClick={() => { setContactType('phone'); setNewAccount(''); setError(''); }}
+                className={cn(
+                  'flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
+                  contactType === 'phone' ? 'bg-[#2A3A5C] text-white' : 'text-[#8B8FA3] hover:text-white',
+                )}
+              >
+                更换手机号
+              </button>
+              <button
+                onClick={() => { setContactType('email'); setNewAccount(''); setError(''); }}
+                className={cn(
+                  'flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
+                  contactType === 'email' ? 'bg-[#2A3A5C] text-white' : 'text-[#8B8FA3] hover:text-white',
+                )}
+              >
+                更换邮箱
+              </button>
+            </div>
+
+            <Input
+              type={contactType === 'phone' ? 'tel' : 'email'}
+              value={newAccount}
+              onChange={(e) => setNewAccount(e.target.value)}
+              placeholder={contactType === 'phone' ? '新手机号' : '新邮箱地址'}
+              className="h-9 w-full text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A]"
+            />
+
+            <div className="flex gap-2 mt-3">
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="验证码"
+                className="h-9 flex-1 text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A]"
+              />
+              <button
+                onClick={sendCode}
+                disabled={sending || countdown > 0}
+                className="px-3 text-xs whitespace-nowrap bg-[#2A3A5C] hover:bg-[#2A3A5C]/80 text-white rounded transition-colors disabled:opacity-50"
+              >
+                {sending ? '发送中...' : countdown > 0 ? `${countdown}s` : '发送验证码'}
+              </button>
+            </div>
+
+            {error && <p className="text-xs text-[#FF6B6B] mt-3">{error}</p>}
+          </>
+        )}
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
+          >
+            {done ? '关闭' : '取消'}
+          </button>
+          {!done && (
+            <button
+              onClick={submit}
+              disabled={submitting}
+              className="flex-1 px-3 py-2 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认更换'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- User menu ----------
 
 interface UserMenuProps {
@@ -721,6 +1040,8 @@ interface UserMenuProps {
 export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
   const [showConsumption, setShowConsumption] = useState(false);
   const [showRecharge, setShowRecharge] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showChangePhone, setShowChangePhone] = useState(false);
 
   return (
     <>
@@ -753,6 +1074,20 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
             充值
           </DropdownMenuItem>
           <DropdownMenuItem
+            onClick={() => setShowChangePhone(true)}
+            className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer flex items-center gap-2 border-t border-[#2A3A5C]/40"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-[#8B8FA3]" />
+            更换手机 / 邮箱
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setShowChangePassword(true)}
+            className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer flex items-center gap-2"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-[#8B8FA3]" />
+            修改密码
+          </DropdownMenuItem>
+          <DropdownMenuItem
             onClick={onLogout}
             className="text-xs text-[#FF6B6B] hover:bg-[#FF6B6B]/10 cursor-pointer flex items-center gap-2 border-t border-[#2A3A5C]/40"
           >
@@ -764,6 +1099,15 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
 
       <ConsumptionDialog open={showConsumption} onClose={() => setShowConsumption(false)} />
       <RechargeDialog open={showRecharge} onClose={() => setShowRecharge(false)} />
+      <ChangePhoneDialog open={showChangePhone} onClose={() => setShowChangePhone(false)} />
+      <ChangePasswordDialog
+        open={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+        onChanged={() => {
+          setShowChangePassword(false);
+          onLogout();
+        }}
+      />
     </>
   );
 }

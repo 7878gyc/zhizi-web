@@ -146,6 +146,15 @@ export default function AnalyzePage() {
       setDisplayWinrate,
     );
 
+  // --- Handicap stones (from imported SGF root AB/AW) ---
+  const handicapStones = useMemo(
+    () =>
+      (moveTree.handicapStones ?? [])
+        .filter((s) => s.color === 'black')
+        .map((s) => s.move),
+    [moveTree],
+  );
+
   // --- Winrate sync ---
   const lastWinrateRef = useRef<number | null>(null);
   useEffect(() => {
@@ -192,8 +201,9 @@ export default function AnalyzePage() {
       rules,
       player: currentPlayer,
       moves: gtpMoves,
+      handicapStones,
     });
-  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
+  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, handicapStones, syncAndAnalyze]);
 
   // --- Load cached analysis on tree navigation ---
   useEffect(() => {
