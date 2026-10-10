@@ -1,33 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { saveToken, getToken, removeToken, saveUser, getUser, isLoggedIn, TOKEN_KEY } from '@/lib/auth';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { saveUser, getUser, clearUser, fetchCurrentUser } from '@/lib/auth';
 
-describe('auth token management', () => {
+describe('auth user cache', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('saves and retrieves the token', () => {
-    saveToken('abc123');
-    expect(getToken()).toBe('abc123');
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('abc123');
-  });
-
-  it('returns null when no token is stored', () => {
-    expect(getToken()).toBeNull();
-  });
-
-  it('isLoggedIn reflects token presence', () => {
-    expect(isLoggedIn()).toBe(false);
-    saveToken('x');
-    expect(isLoggedIn()).toBe(true);
-  });
-
-  it('removeToken clears token and user', () => {
-    saveToken('x');
-    saveUser({ name: 'test' });
-    removeToken();
-    expect(getToken()).toBeNull();
-    expect(getUser()).toBeNull();
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('saveUser stores JSON and getUser parses it', () => {
@@ -39,5 +19,34 @@ describe('auth token management', () => {
     expect(getUser()).toBeNull();
     localStorage.setItem('zhizi_user', '{not json');
     expect(getUser()).toBeNull();
+  });
+
+  it('clearUser removes the cached user', () => {
+    saveUser({ name: 'Bob' });
+    clearUser();
+    expect(getUser()).toBeNull();
+  });
+});
+
+describe('fetchCurrentUser', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the user payload when the session is valid', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ phone: '13800000000' }), { status: 200 }),
+    );
+    await expect(fetchCurrentUser()).resolves.toEqual({ phone: '13800000000' });
+  });
+
+  it('returns null when the session is invalid (401)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Authorized', { status: 401 }));
+    await expect(fetchCurrentUser()).resolves.toBeNull();
+  });
+
+  it('returns null when the network fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+    await expect(fetchCurrentUser()).resolves.toBeNull();
   });
 });

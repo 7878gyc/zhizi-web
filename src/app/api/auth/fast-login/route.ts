@@ -1,42 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { proxyZhiziWithCookie } from '@/lib/zhizi-proxy';
 
-const ZHIZI_API_BASE = 'https://www.zhizigo.com';
-
+// POST /api/auth/fast-login
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { email, phone, verificationCode } = body;
+  const body = await request.json().catch(() => null);
+  const { email, phone, verificationCode } = (body ?? {}) as {
+    email?: string;
+    phone?: string;
+    verificationCode?: string;
+  };
 
-    if (!verificationCode || (!email && !phone)) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    const requestBody = email
-      ? { email, verificationCode }
-      : { phone, verificationCode };
-
-    const resp = await fetch(`${ZHIZI_API_BASE}/api/cluster/account/fast-login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0',
-        Referer: 'https://www.zhizigo.com/',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const data = await resp.json();
-
-    if (!resp.ok) {
-      return NextResponse.json(data, { status: resp.status });
-    }
-
-    return NextResponse.json(data);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  if (!verificationCode || (!email && !phone)) {
+    return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
   }
+
+  // 走自己的 BFF，无需伪装浏览器 User-Agent / Referer。
+  return proxyZhiziWithCookie(request, '/api/cluster/account/fast-login', {
+    method: 'POST',
+    auth: false,
+    body: email ? { email, verificationCode } : { phone, verificationCode },
+  });
 }

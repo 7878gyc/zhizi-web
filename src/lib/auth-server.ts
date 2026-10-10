@@ -1,26 +1,17 @@
 import { createHash } from 'crypto';
-
-const ZHIZI_API_BASE = 'https://www.zhizigo.com';
+import { ZHIZI_API_BASE, getAuthToken } from '@/lib/zhizi-auth';
 
 /**
- * 从 Request 的 Authorization header 提取 token，
+ * 从请求的 httpOnly Cookie（或兼容旧 Authorization 头）提取 token，
  * 调用 zhizigo.com 验证用户身份并获取手机号/邮箱，
  * 计算 SHA256 哈希作为 userHash。
  *
  * 哈希计算在后端完成，绝不到前端。
  */
 export async function extractUserHash(request: Request): Promise<string> {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader) {
-    throw new AuthError('Missing authorization header', 401);
-  }
-
-  const token = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : authHeader;
-
+  const token = getAuthToken(request);
   if (!token) {
-    throw new AuthError('Empty token', 401);
+    throw new AuthError('Missing authorization token', 401);
   }
 
   let resp: Response;

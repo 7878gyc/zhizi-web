@@ -1,48 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { proxyZhizi } from '@/lib/zhizi-proxy';
 
-const ZHIZI_API_BASE = 'https://www.zhizigo.com';
-
+// POST /api/auth/send-code
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { email, phone, type = 'fast_login' } = body;
+  const body = await request.json().catch(() => null);
+  const { email, phone, type = 'fast_login' } = (body ?? {}) as {
+    email?: string;
+    phone?: string;
+    type?: string;
+  };
 
-    if (!email && !phone) {
-      return NextResponse.json(
-        { error: 'Missing email or phone' },
-        { status: 400 }
-      );
-    }
-
-    const requestBody = email
-      ? { email, type }
-      : { phone, type };
-
-    const resp = await fetch(`${ZHIZI_API_BASE}/api/cluster/account/send-code`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0',
-        Referer: 'https://www.zhizigo.com/',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const text = await resp.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : { success: true };
-    } catch {
-      data = { success: resp.ok, message: text || (resp.ok ? '验证码已发送' : '发送失败') };
-    }
-
-    if (!resp.ok) {
-      return NextResponse.json(data, { status: resp.status });
-    }
-
-    return NextResponse.json(data);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  if (!email && !phone) {
+    return NextResponse.json({ error: '缺少邮箱或手机号' }, { status: 400 });
   }
+
+  // 走自己的 BFF，无需伪装浏览器 User-Agent / Referer。
+  return proxyZhizi(request, '/api/cluster/account/send-code', {
+    method: 'POST',
+    auth: false,
+    body: email ? { email, type } : { phone, type },
+  });
 }

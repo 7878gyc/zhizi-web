@@ -9,7 +9,7 @@
 - **登录认证**：手机号/邮箱 + 密码登录，代理到 `zhizigo.com` API
 - **交互式棋盘**：Canvas 渲染的19x19围棋盘，支持落子、悔棋、清空
 - **AI分析**：通过 WebSocket/Socket.IO 连接 KataGo 引擎，获取胜率和推荐落子
-- **AI配置选择**：支持不同GPU类型(1x/2x/4x)、引擎(OPENCL/TENSORRT)、权重(18b/28bnbt/40b)
+- **AI配置选择**：支持不同GPU类型(1x/3x/6x/12x/24x/vip-share)、引擎(katago-TENSORRT/katago-CUDA)、权重(18bnbt/28bnbt/fdx)
 
 ## 技术栈
 

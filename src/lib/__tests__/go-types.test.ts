@@ -83,16 +83,26 @@ describe('SGF coordinate conversion', () => {
 
 describe('buildArgsString & AI_CONFIGS', () => {
   it('generates all GPU x weight combinations', () => {
-    expect(AI_CONFIGS).toHaveLength(5 * 3);
+    expect(AI_CONFIGS).toHaveLength(6 * 3);
     expect(AI_CONFIGS.every(c => c.platform === 'all')).toBe(true);
     expect(AI_CONFIGS.every(c => c.engineType === 'go')).toBe(true);
   });
 
   it('builds the expected argument string', () => {
-    const cfg = AI_CONFIGS.find(c => c.gpuType === '1x' && c.kataWeight === '18b')!;
+    const cfg = AI_CONFIGS.find(c => c.gpuType === '1x' && c.kataWeight === '18bnbt')!;
     expect(buildArgsString(cfg)).toBe(
-      '--platform all --engine-type go --gpu-type 1x --kata-name katago-TENSORRT --kata-weight 18b'
+      '--platform all --engine-type go --gpu-type 1x --kata-name katago-TENSORRT --kata-weight 18bnbt'
     );
+  });
+
+  it('rejects values outside the public contract whitelist', () => {
+    const cfg = AI_CONFIGS[0];
+    expect(() => buildArgsString({ ...cfg, gpuType: '2x' })).toThrow();
+    expect(() => buildArgsString({ ...cfg, gpuType: '4x' })).toThrow();
+    expect(() => buildArgsString({ ...cfg, kataWeight: '18b' })).toThrow();
+    expect(() => buildArgsString({ ...cfg, kataWeight: '40b' })).toThrow();
+    expect(() => buildArgsString({ ...cfg, kataName: 'katago-OPENCL' })).toThrow();
+    expect(() => buildArgsString({ ...cfg, kataName: 'katago-CUDA' })).not.toThrow();
   });
 });
 

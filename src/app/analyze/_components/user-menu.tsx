@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { ChevronDown, ChevronRight, Loader2, Wallet, CreditCard, LogOut, Crown, RefreshCw } from 'lucide-react';
 import {
   DropdownMenu,
@@ -9,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { getToken } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 // ---------- Types ----------
@@ -31,6 +31,7 @@ interface CreditItem {
   createdAt: string;
 }
 
+/** /api/cluster/balance 返回的余额，单位：元 */
 interface BalanceInfo {
   remainingBalance: number;
 }
@@ -38,6 +39,7 @@ interface BalanceInfo {
 interface MembershipProduct {
   name: string;
   type: string;
+  /** 价格，单位：分 */
   price: number;
 }
 
@@ -50,13 +52,12 @@ interface PayOrder {
 
 // ---------- Helpers ----------
 
+/** 同源请求，会话由 httpOnly Cookie 自动携带，前端不再持有 token。 */
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = getToken();
   const resp = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options?.headers ?? {}),
     },
   });
@@ -90,6 +91,11 @@ function formatDuration(sec: number): string {
   return `${ss}秒`;
 }
 
+/** 分 -> 元，保留角分 */
+function formatYuanFromFen(fen: number): string {
+  return (fen / 100).toFixed(2);
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   PAYMENT: '现金',
   GIFT: '赠送',
@@ -97,9 +103,87 @@ const SOURCE_LABELS: Record<string, string> = {
   PURCHASE_PRODUCT: '购买产品',
 };
 
+/**
+ * 支付成功后刷新会员信息与余额。会话走同源 Cookie，无需携带 token。
+ * 通过 window 事件广播，便于同时打开的余额视图即时更新。
+ */
+async function refreshAccountState(): Promise<void> {
+  try {
+    const [me, balance] = await Promise.all([
+      api<Record<string, unknown>>('/api/auth/me').catch(() => null),
+      api<BalanceInfo>('/api/cluster/balance').catch(() => null),
+    ]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('zhizi:account-updated', { detail: { me, balance } }),
+      );
+    }
+  } catch {
+    /* 刷新失败不影响支付结果展示 */
+  }
+}
+
+// ---------- WeChat QR code ----------
+
+function PayQrCode({ codeURL }: { codeURL: string }) {
+  const [src, setSrc] = useState<string>('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+    setSrc('');
+    // codeURL 形如 weixin://wxpay/bizpayurl?pr=...，必须原样编码进二维码，
+    // 不做 URL 编码、不改写、不能当网页打开。
+    QRCode.toDataURL(codeURL, { width: 220, margin: 1, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (active) setSrc(url);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [codeURL]);
+
+  if (failed) {
+    return (
+      <p className="text-xs text-[#FF6B6B] text-center">
+        二维码生成失败，请关闭后重试
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="bg-white p-2 rounded-lg">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt="微信支付二维码" width={200} height={200} />
+        ) : (
+          <div className="w-[200px] h-[200px] flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-[#8B8FA3]" />
+          </div>
+        )}
+      </div>
+      <p className="text-[10px] text-[#8B8FA3]">请用微信扫码完成支付</p>
+    </div>
+  );
+}
+
 // ---------- Payment polling hook ----------
 
-function useOrderPolling(orderId: string | null, onDone: (order: PayOrder) => void) {
+function useOrderPolling(
+  orderId: string | null,
+  onDone: (order: PayOrder) => void,
+) {
+  const onDoneRef = useRef(onDone);
+
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
   useEffect(() => {
     if (!orderId) return;
     let cancelled = false;
@@ -108,7 +192,7 @@ function useOrderPolling(orderId: string | null, onDone: (order: PayOrder) => vo
         const order = await api<PayOrder>(`/api/pay/orders/${orderId}`);
         if (!cancelled && order.paidStatus !== 'PENDING') {
           clearInterval(timer);
-          onDone(order);
+          onDoneRef.current(order);
         }
       } catch {
         // keep polling
@@ -118,18 +202,27 @@ function useOrderPolling(orderId: string | null, onDone: (order: PayOrder) => vo
       cancelled = true;
       clearInterval(timer);
     };
-  }, [orderId, onDone]);
+  }, [orderId]);
 }
 
-async function createOrderAndJump(body: Record<string, unknown>): Promise<PayOrder> {
-  const order = await api<PayOrder>('/api/pay/orders', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  if (order.nativePayRequest?.codeURL) {
-    window.open(order.nativePayRequest.codeURL, '_blank', 'noopener,noreferrer');
+/** 创建支付订单；超时后不自动重试（官方不保证幂等），把控制权交回用户。 */
+async function createOrder(body: Record<string, unknown>): Promise<PayOrder> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    return await api<PayOrder>('/api/pay/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('创建订单超时，请手动重试');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return order;
 }
 
 // ---------- Consumption dialog ----------
@@ -142,7 +235,7 @@ interface ConsumptionDialogProps {
 function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
   const [usages, setUsages] = useState<UsageItem[]>([]);
   const [credits, setCredits] = useState<CreditItem[]>([]);
-  const [balance, setBalance] = useState<number | null>(null);
+  const [remainingBalanceYuan, setRemainingBalanceYuan] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -157,7 +250,7 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
       ]);
       setUsages(u.items ?? []);
       setCredits(c.items ?? []);
-      setBalance(typeof b?.remainingBalance === 'number' ? b.remainingBalance : null);
+      setRemainingBalanceYuan(typeof b?.remainingBalance === 'number' ? b.remainingBalance : null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '加载失败');
     } finally {
@@ -167,6 +260,15 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
 
   useEffect(() => {
     if (open) load();
+  }, [open, load]);
+
+  // 支付成功后若本弹窗打开，余额即时刷新
+  useEffect(() => {
+    const handler = () => {
+      if (open) load();
+    };
+    window.addEventListener('zhizi:account-updated', handler);
+    return () => window.removeEventListener('zhizi:account-updated', handler);
   }, [open, load]);
 
   const rows = useMemo(() => {
@@ -196,10 +298,10 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
       <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl max-h-[80vh] flex flex-col">
         <h3 className="text-sm font-bold text-[#E8B931] mb-3 shrink-0">消费记录</h3>
 
-        {balance !== null && (
+        {remainingBalanceYuan !== null && (
           <div className="shrink-0 mb-3 flex items-center justify-between bg-[#1A1A2E]/60 border border-[#2A3A5C]/50 rounded-lg px-4 py-3">
             <span className="text-xs text-[#8B8FA3]">当前余额</span>
-            <span className="text-lg font-bold text-[#E8B931]">¥{balance.toFixed(2)}</span>
+            <span className="text-lg font-bold text-[#E8B931]">¥{remainingBalanceYuan.toFixed(2)}</span>
           </div>
         )}
 
@@ -267,6 +369,7 @@ function VipDialog({ open, onClose }: VipDialogProps) {
   const [selected, setSelected] = useState<MembershipProduct | null>(null);
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [codeURL, setCodeURL] = useState('');
   const [payStatus, setPayStatus] = useState<'PENDING' | 'SUCCESS' | 'FAIL'>('PENDING');
   const [payError, setPayError] = useState('');
 
@@ -287,6 +390,7 @@ function VipDialog({ open, onClose }: VipDialogProps) {
     if (open) {
       setSelected(null);
       setOrderId(null);
+      setCodeURL('');
       setPayStatus('PENDING');
       setPayError('');
       setPaying(false);
@@ -294,9 +398,14 @@ function VipDialog({ open, onClose }: VipDialogProps) {
     }
   }, [open, loadProducts]);
 
-  useOrderPolling(orderId, (order) => {
+  useOrderPolling(open ? orderId : null, (order) => {
     setPayStatus(order.paidStatus);
-    if (order.paidStatus === 'FAIL') setPayError(order.errorMessage ?? '支付失败');
+    if (order.paidStatus === 'SUCCESS') {
+      refreshAccountState();
+    } else {
+      // 用本地文案，不把上游 errorMessage 原文丢给用户
+      setPayError('支付失败，请重试');
+    }
     setPaying(false);
     setOrderId(null);
   });
@@ -306,15 +415,17 @@ function VipDialog({ open, onClose }: VipDialogProps) {
     setPaying(true);
     setPayError('');
     try {
-      const order = await createOrderAndJump({
+      const priceFen = selected.price;
+      const order = await createOrder({
         payType: 'WECHAT',
-        amount: selected.price,
+        amount: priceFen,
         tradeType: 'NATIVE',
         body: '智子围棋VIP会员',
         orderType: 'PURCHASE_PRODUCT',
         productName: selected.name,
         extraInfo: { autoRenew: false },
       });
+      setCodeURL(order.nativePayRequest?.codeURL ?? '');
       setOrderId(order.id);
       setPayStatus('PENDING');
     } catch (e: unknown) {
@@ -357,15 +468,16 @@ function VipDialog({ open, onClose }: VipDialogProps) {
             <div className="grid grid-cols-2 gap-2.5">
               {products.map((p) => {
                 const label = PRODUCT_LABELS[p.name] ?? p.name;
-                const priceYuan = (p.price / 100).toFixed(0);
+                const priceYuan = formatYuanFromFen(p.price);
                 const active = selected?.name === p.name;
                 return (
                   <button
                     key={p.name}
                     type="button"
                     onClick={() => setSelected(p)}
+                    disabled={!!orderId}
                     className={cn(
-                      'rounded-lg border p-3 text-left transition-colors',
+                      'rounded-lg border p-3 text-left transition-colors disabled:opacity-50',
                       active
                         ? 'border-[#E8B931] bg-[#E8B931]/10'
                         : 'border-[#2A3A5C]/60 bg-[#1A1A2E] hover:border-[#E8B931]/50',
@@ -378,29 +490,31 @@ function VipDialog({ open, onClose }: VipDialogProps) {
               })}
             </div>
 
-            <button
-              onClick={handlePay}
-              disabled={!selected || paying || !!orderId}
-              className="w-full mt-4 px-3 py-2.5 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {paying ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> 创建订单中...
-                </>
-              ) : orderId ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> 等待支付...
-                </>
-              ) : (
-                '去支付'
-              )}
-            </button>
+            {orderId && payStatus === 'PENDING' && codeURL ? (
+              <div className="mt-4">
+                <PayQrCode codeURL={codeURL} />
+              </div>
+            ) : (
+              <button
+                onClick={handlePay}
+                disabled={!selected || paying || !!orderId}
+                className="w-full mt-4 px-3 py-2.5 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {paying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> 创建订单中...
+                  </>
+                ) : (
+                  '去支付'
+                )}
+              </button>
+            )}
           </>
         )}
 
         {orderId && payStatus === 'PENDING' && (
           <p className="text-[10px] text-[#8B8FA3] mt-2 text-center">
-            请在打开的微信页面完成支付
+            请使用微信扫描二维码完成支付
           </p>
         )}
 
@@ -424,35 +538,41 @@ interface RechargeDialogProps {
   onClose: () => void;
 }
 
-const QUICK_AMOUNTS = [5, 10, 20, 50, 100];
+const QUICK_AMOUNTS_YUAN = [5, 10, 20, 50, 100];
 
 function RechargeDialog({ open, onClose }: RechargeDialogProps) {
-  const [amount, setAmount] = useState('');
+  const [amountYuan, setAmountYuan] = useState('');
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [codeURL, setCodeURL] = useState('');
   const [payStatus, setPayStatus] = useState<'PENDING' | 'SUCCESS' | 'FAIL'>('PENDING');
   const [payError, setPayError] = useState('');
   const [showVip, setShowVip] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setAmount('');
+      setAmountYuan('');
       setOrderId(null);
+      setCodeURL('');
       setPayStatus('PENDING');
       setPayError('');
       setPaying(false);
     }
   }, [open]);
 
-  useOrderPolling(orderId, (order) => {
+  useOrderPolling(open ? orderId : null, (order) => {
     setPayStatus(order.paidStatus);
-    if (order.paidStatus === 'FAIL') setPayError(order.errorMessage ?? '支付失败');
+    if (order.paidStatus === 'SUCCESS') {
+      refreshAccountState();
+    } else {
+      setPayError('支付失败，请重试');
+    }
     setPaying(false);
     setOrderId(null);
   });
 
   const handlePay = async () => {
-    const yuan = parseFloat(amount);
+    const yuan = parseFloat(amountYuan);
     if (!Number.isFinite(yuan) || yuan <= 0) {
       setPayError('请输入有效的充值金额');
       return;
@@ -461,15 +581,17 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
       setPayError('单次充值金额过大');
       return;
     }
+    const amountFen = Math.round(yuan * 100);
     setPaying(true);
     setPayError('');
     try {
-      const order = await createOrderAndJump({
+      const order = await createOrder({
         payType: 'WECHAT',
-        amount: Math.round(yuan * 100),
+        amount: amountFen,
         tradeType: 'NATIVE',
         body: '智子围棋账户充值',
       });
+      setCodeURL(order.nativePayRequest?.codeURL ?? '');
       setOrderId(order.id);
       setPayStatus('PENDING');
     } catch (e: unknown) {
@@ -494,17 +616,21 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
               <div className="text-lg font-bold text-[#4ADE80] mb-1">支付成功</div>
               <div className="text-xs text-[#8B8FA3]">余额已到账</div>
             </div>
+          ) : orderId && payStatus === 'PENDING' && codeURL ? (
+            <div className="py-2">
+              <PayQrCode codeURL={codeURL} />
+            </div>
           ) : (
             <>
               <div className="grid grid-cols-5 gap-2 mb-3">
-                {QUICK_AMOUNTS.map((q) => (
+                {QUICK_AMOUNTS_YUAN.map((q) => (
                   <button
                     key={q}
                     type="button"
-                    onClick={() => setAmount(String(q))}
+                    onClick={() => setAmountYuan(String(q))}
                     className={cn(
                       'px-1 py-2 text-xs rounded border transition-colors',
-                      amount === String(q)
+                      amountYuan === String(q)
                         ? 'border-[#E8B931] bg-[#E8B931]/10 text-[#E8B931]'
                         : 'border-[#2A3A5C]/60 bg-[#1A1A2E] text-[#C8CAD0] hover:border-[#E8B931]/50',
                     )}
@@ -521,8 +647,8 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
                     type="number"
                     min={0}
                     step={1}
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    value={amountYuan}
+                    onChange={(e) => setAmountYuan(e.target.value)}
                     placeholder="输入金额"
                     className="h-9 w-full text-sm bg-[#1A1A2E] border-[#2A3A5C]/60 text-[#E0E0E0] placeholder:text-[#4A4A6A] focus-visible:ring-[#E8B931]/30 pr-7 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
@@ -539,10 +665,6 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> 创建订单中...
                   </>
-                ) : orderId ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> 等待支付...
-                  </>
                 ) : (
                   <>
                     <Wallet className="w-4 h-4" /> 微信支付
@@ -552,7 +674,7 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
 
               {orderId && payStatus === 'PENDING' && (
                 <p className="text-[10px] text-[#8B8FA3] mt-2 text-center">
-                  请在打开的微信页面完成支付
+                  请使用微信扫描二维码完成支付
                 </p>
               )}
             </>

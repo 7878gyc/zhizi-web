@@ -52,19 +52,28 @@ export interface AiConfig {
   label: string;
 }
 
-// GPU types available
+// GPU types available（智子围棋公开契约）
 export const GPU_TYPES = [
   { value: '1x', label: '1x GPU' },
-  { value: '2x', label: '2x GPU' },
   { value: '3x', label: '3x GPU' },
-  { value: '4x', label: '4x GPU' },
+  { value: '6x', label: '6x GPU' },
+  { value: '12x', label: '12x GPU' },
+  { value: '24x', label: '24x GPU' },
   { value: 'vip-share', label: 'VIP共享' },
 ];
 
-// Weights available
+// KataGo engines（智子围棋公开契约）
+export const KATA_ENGINES = [
+  { value: 'katago-TENSORRT', label: 'TensorRT（默认）' },
+  { value: 'katago-CUDA', label: 'CUDA（启动更快）' },
+];
+
+export const DEFAULT_ENGINE = 'katago-TENSORRT';
+
+// Weights available（智子围棋公开契约）
 export const WEIGHTS = [
-  { value: '18b', label: '18b (轻量)' },
-  { value: '28bnbt', label: '28b (标准)' },
+  { value: '18bnbt', label: '18b-nbt (轻量)' },
+  { value: '28bnbt', label: '28b-nbt (标准)' },
   { value: 'fdx', label: 'fdx (最强)' },
 ];
 
@@ -74,14 +83,37 @@ export const AI_CONFIGS: AiConfig[] = GPU_TYPES.flatMap(gpu =>
     platform: 'all',
     engineType: 'go',
     gpuType: gpu.value,
-    kataName: 'katago-TENSORRT',
+    kataName: DEFAULT_ENGINE,
     kataWeight: weight.value,
     label: `${weight.label} ${gpu.label}`,
   }))
 );
 
+// --- Whitelists for buildArgsString (never concatenate user input) ---
+const ALLOWED_PLATFORMS = new Set(['all']);
+const ALLOWED_ENGINE_TYPES = new Set(['go']);
+const ALLOWED_GPU_TYPES = new Set(GPU_TYPES.map(g => g.value));
+const ALLOWED_KATA_NAMES = new Set(KATA_ENGINES.map(e => e.value));
+const ALLOWED_KATA_WEIGHTS = new Set(WEIGHTS.map(w => w.value));
+
 export function buildArgsString(config: AiConfig): string {
-  return `--platform ${config.platform} --engine-type ${config.engineType} --gpu-type ${config.gpuType} --kata-name ${config.kataName} --kata-weight ${config.kataWeight}`;
+  const { platform, engineType, gpuType, kataName, kataWeight } = config;
+  if (!ALLOWED_PLATFORMS.has(platform)) {
+    throw new Error(`Unsupported platform: ${platform}`);
+  }
+  if (!ALLOWED_ENGINE_TYPES.has(engineType)) {
+    throw new Error(`Unsupported engineType: ${engineType}`);
+  }
+  if (!ALLOWED_GPU_TYPES.has(gpuType)) {
+    throw new Error(`Unsupported gpuType: ${gpuType}`);
+  }
+  if (!ALLOWED_KATA_NAMES.has(kataName)) {
+    throw new Error(`Unsupported engine: ${kataName}`);
+  }
+  if (!ALLOWED_KATA_WEIGHTS.has(kataWeight)) {
+    throw new Error(`Unsupported weight: ${kataWeight}`);
+  }
+  return `--platform ${platform} --engine-type ${engineType} --gpu-type ${gpuType} --kata-name ${kataName} --kata-weight ${kataWeight}`;
 }
 
 // --- Coordinate conversion ---

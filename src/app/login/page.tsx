@@ -6,16 +6,35 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { isLoggedIn, saveToken } from '@/lib/auth';
+import { fetchCurrentUser, saveUser } from '@/lib/auth';
+
+// 官方错误 key -> 面向用户的本地文案，避免直接把 key 展示给用户。
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+  invalid_password: '密码错误',
+  invalid_verification_code: '验证码错误或过期',
+  fast_login_too_frequent: '尝试过于频繁，请稍后再试',
+};
+
+function mapAuthError(
+  data: { key?: string; message?: string; error?: string } | null,
+  fallback: string,
+): string {
+  if (data?.key && LOGIN_ERROR_MESSAGES[data.key]) return LOGIN_ERROR_MESSAGES[data.key];
+  return data?.message || data?.error || fallback;
+}
 
 export default function LoginPage() {
   const router = useRouter();
 
   // 已登录用户不应停留在登录页，直接进入分析页
   useEffect(() => {
-    if (isLoggedIn()) {
-      router.replace('/analyze');
-    }
+    let active = true;
+    fetchCurrentUser().then((user) => {
+      if (active && user) router.replace('/analyze');
+    });
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
@@ -67,16 +86,13 @@ export default function LoginPage() {
       const data = await resp.json();
 
       if (!resp.ok) {
-        setError(data.key || data.message || data.error || '登录失败');
+        setError(mapAuthError(data, '登录失败'));
         return;
       }
 
-      if (data.token) {
-        saveToken(data.token);
-        router.push('/analyze');
-      } else {
-        setError('登录返回异常，未获取到令牌');
-      }
+      // 会话 token 由后端写入 httpOnly Cookie，前端只缓存展示信息。
+      saveUser(data as Record<string, unknown>);
+      router.push('/analyze');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '网络错误');
     } finally {
@@ -105,7 +121,7 @@ export default function LoginPage() {
       const data = await resp.json();
 
       if (!resp.ok) {
-        setError(data.key || data.message || data.error || '发送验证码失败');
+        setError(mapAuthError(data, '发送验证码失败'));
         return;
       }
 

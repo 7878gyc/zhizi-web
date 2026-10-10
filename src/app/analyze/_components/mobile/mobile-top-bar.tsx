@@ -11,13 +11,52 @@ import { ChevronDown, Play, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserMenu } from '../user-menu';
 
+interface ConfigDropdownProps {
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  display?: (value: string) => string;
+  minWidth?: string;
+}
+
+function ConfigDropdown({ value, options, onChange, display, minWidth = '4rem' }: ConfigDropdownProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-1.5 text-[11px] border-[#2A3A5C]/60 bg-[#1A1A2E] text-[#E0E0E0] hover:bg-[#16213E]"
+        >
+          {display ? display(value) : value}
+          <ChevronDown className="ml-0.5 h-3 w-3 text-[#8B8FA3]" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" className="bg-[#1A1A2E] border-[#2A3A5C]/60" style={{ minWidth }}>
+        {options.map((opt) => (
+          <DropdownMenuItem
+            key={opt}
+            onClick={() => onChange(opt)}
+            className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer"
+          >
+            {display ? display(opt) : opt}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface MobileTopBarProps {
   gpu: string;
   weight: string;
+  engine: string;
   gpuOptions: string[];
   weightOptions: string[];
+  engineOptions: string[];
   onGpuChange: (gpu: string) => void;
   onWeightChange: (weight: string) => void;
+  onEngineChange: (engine: string) => void;
   userDisplayName?: string;
   onLogout?: () => void;
   isAnalyzing: boolean;
@@ -25,13 +64,21 @@ interface MobileTopBarProps {
   onToggleAnalyze: () => void;
 }
 
+const ENGINE_SHORT: Record<string, string> = {
+  'katago-TENSORRT': 'TensorRT',
+  'katago-CUDA': 'CUDA',
+};
+
 export function MobileTopBar({
   gpu,
   weight,
+  engine,
   gpuOptions,
   weightOptions,
+  engineOptions,
   onGpuChange,
   onWeightChange,
+  onEngineChange,
   userDisplayName,
   onLogout,
   isAnalyzing,
@@ -49,55 +96,17 @@ export function MobileTopBar({
         )}
       </div>
 
-      {/* Center: GPU + Weight dropdowns */}
-      <div className="flex items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-1.5 text-[11px] border-[#2A3A5C]/60 bg-[#1A1A2E] text-[#E0E0E0] hover:bg-[#16213E]"
-            >
-              {gpu}
-              <ChevronDown className="ml-0.5 h-3 w-3 text-[#8B8FA3]" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="bg-[#1A1A2E] border-[#2A3A5C]/60 min-w-[4rem]">
-            {gpuOptions.map((opt) => (
-              <DropdownMenuItem
-                key={opt}
-                onClick={() => onGpuChange(opt)}
-                className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer"
-              >
-                {opt}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-1.5 text-[11px] border-[#2A3A5C]/60 bg-[#1A1A2E] text-[#E0E0E0] hover:bg-[#16213E]"
-            >
-              {weight}
-              <ChevronDown className="ml-0.5 h-3 w-3 text-[#8B8FA3]" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="bg-[#1A1A2E] border-[#2A3A5C]/60 min-w-[5rem]">
-            {weightOptions.map((opt) => (
-              <DropdownMenuItem
-                key={opt}
-                onClick={() => onWeightChange(opt)}
-                className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer"
-              >
-                {opt}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Center: GPU + Weight + Engine dropdowns */}
+      <div className="flex items-center gap-0.5">
+        <ConfigDropdown value={gpu} options={gpuOptions} onChange={onGpuChange} minWidth="4rem" />
+        <ConfigDropdown value={weight} options={weightOptions} onChange={onWeightChange} minWidth="5rem" />
+        <ConfigDropdown
+          value={engine}
+          options={engineOptions}
+          onChange={onEngineChange}
+          display={(v) => ENGINE_SHORT[v] ?? v}
+          minWidth="5.5rem"
+        />
       </div>
 
       {/* Right: Start/Stop button */}

@@ -16,14 +16,11 @@ export function useCloudRecords() {
   const [error, setError] = useState('');
   const [importingId, setImportingId] = useState<string | null>(null);
 
-  const fetchRecords = useCallback(async (token: string | null) => {
-    if (!token) return;
+  const fetchRecords = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const resp = await fetch('/api/records', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await fetch('/api/records');
       const data = await resp.json();
       if (data.error) {
         setError(data.error);
@@ -38,13 +35,11 @@ export function useCloudRecords() {
   }, []);
 
   const deleteRecord = useCallback(
-    async (id: string, fileName: string, token: string | null) => {
+    async (id: string, fileName: string) => {
       if (!confirm(`确认删除「${fileName}」？此操作不可撤销。`)) return;
-      if (!token) return;
       try {
         const resp = await fetch(`/api/records/${id}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
         });
         if (!resp.ok) {
           const err = await resp.json();

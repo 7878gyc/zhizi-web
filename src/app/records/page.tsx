@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getToken, isLoggedIn } from '@/lib/auth';
+import { fetchCurrentUser } from '@/lib/auth';
 
 interface RecordItem {
   id: string;
@@ -49,22 +49,11 @@ export default function RecordsPage() {
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace('/login');
-      return;
-    }
-    loadRecords();
-  }, [router]);
-
   const loadRecords = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const token = getToken();
-      const resp = await fetch('/api/records', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await fetch('/api/records');
       const data = await resp.json();
       if (!resp.ok) {
         setError(data.error || '加载失败');
@@ -78,10 +67,24 @@ export default function RecordsPage() {
     }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    fetchCurrentUser().then((user) => {
+      if (!active) return;
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+      loadRecords();
+    });
+    return () => {
+      active = false;
+    };
+  }, [router, loadRecords]);
+
   const handleUpload = useCallback(async (file: File) => {
     setUploading(true);
     setError('');
-    const token = getToken();
 
     try {
       // 1. 获取预签名上传 URL
@@ -89,7 +92,6 @@ export default function RecordsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
       });
@@ -116,7 +118,6 @@ export default function RecordsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           fileName: file.name,
@@ -144,12 +145,10 @@ export default function RecordsPage() {
 
     setDeletingId(id);
     setError('');
-    const token = getToken();
 
     try {
       const resp = await fetch(`/api/records/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await resp.json();
       if (!resp.ok) {

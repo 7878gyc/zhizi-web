@@ -1,7 +1,7 @@
 'use client';
 
 import type { AiConfig } from '@/lib/go-types';
-import { GPU_TYPES, WEIGHTS } from '@/lib/go-types';
+import { GPU_TYPES, WEIGHTS, KATA_ENGINES, DEFAULT_ENGINE } from '@/lib/go-types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -31,30 +31,32 @@ export default function AiConfigPanel({
   onToggleAutoAnalyze,
   error,
 }: AiConfigPanelProps) {
-  const handleGpuTypeChange = (gpuType: string) => {
-    const weight = selectedConfig?.kataWeight ?? '28bnbt';
-    const config: AiConfig = {
+  const buildConfig = (partial: Partial<Pick<AiConfig, 'gpuType' | 'kataWeight' | 'kataName'>>): AiConfig => {
+    const gpuType = partial.gpuType ?? selectedConfig?.gpuType ?? '1x';
+    const kataWeight = partial.kataWeight ?? selectedConfig?.kataWeight ?? '28bnbt';
+    const kataName = partial.kataName ?? selectedConfig?.kataName ?? DEFAULT_ENGINE;
+    const gpuLabel = GPU_TYPES.find(g => g.value === gpuType)?.label ?? gpuType;
+    const weightLabel = WEIGHTS.find(w => w.value === kataWeight)?.label ?? kataWeight;
+    return {
       platform: 'all',
       engineType: 'go',
       gpuType,
-      kataName: 'katago-TENSORRT',
-      kataWeight: weight,
-      label: `${WEIGHTS.find(w => w.value === weight)?.label} ${GPU_TYPES.find(g => g.value === gpuType)?.label}`,
+      kataName,
+      kataWeight,
+      label: `${weightLabel} ${gpuLabel}`,
     };
-    onSelectConfig(config);
+  };
+
+  const handleGpuTypeChange = (gpuType: string) => {
+    onSelectConfig(buildConfig({ gpuType }));
   };
 
   const handleWeightChange = (kataWeight: string) => {
-    const gpuType = selectedConfig?.gpuType ?? '1x';
-    const config: AiConfig = {
-      platform: 'all',
-      engineType: 'go',
-      gpuType,
-      kataName: 'katago-TENSORRT',
-      kataWeight,
-      label: `${WEIGHTS.find(w => w.value === kataWeight)?.label} ${GPU_TYPES.find(g => g.value === gpuType)?.label}`,
-    };
-    onSelectConfig(config);
+    onSelectConfig(buildConfig({ kataWeight }));
+  };
+
+  const handleEngineChange = (kataName: string) => {
+    onSelectConfig(buildConfig({ kataName }));
   };
 
   return (
@@ -117,6 +119,30 @@ export default function AiConfigPanel({
                 className="text-white focus:bg-[#2A3A5C] focus:text-white text-sm"
               >
                 {weight.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Engine Selection */}
+      <div className="space-y-1.5">
+        <Label className="text-[#8B8FA3] text-xs">引擎</Label>
+        <Select
+          value={selectedConfig?.kataName ?? DEFAULT_ENGINE}
+          onValueChange={handleEngineChange}
+        >
+          <SelectTrigger className="bg-[#1A1A2E]/70 border-[#2A3A5C] text-white text-sm">
+            <SelectValue placeholder="选择引擎" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#16213E] border-[#2A3A5C]">
+            {KATA_ENGINES.map((engine) => (
+              <SelectItem
+                key={engine.value}
+                value={engine.value}
+                className="text-white focus:bg-[#2A3A5C] focus:text-white text-sm"
+              >
+                {engine.label}
               </SelectItem>
             ))}
           </SelectContent>

@@ -34,10 +34,13 @@ interface MobileAnalyzeLayoutProps {
   /* AI config */
   gpu: string;
   weight: string;
+  engine: string;
   gpuOptions: string[];
   weightOptions: string[];
+  engineOptions: string[];
   onGpuChange: (gpu: string) => void;
   onWeightChange: (weight: string) => void;
+  onEngineChange: (engine: string) => void;
 
   /* Players */
   blackName: string;
@@ -111,10 +114,13 @@ export function MobileAnalyzeLayout({
   onSelectMoveFromWinrate,
   gpu,
   weight,
+  engine,
   gpuOptions,
   weightOptions,
+  engineOptions,
   onGpuChange,
   onWeightChange,
+  onEngineChange,
   blackName,
   whiteName,
   onBlackNameChange,
@@ -175,10 +181,13 @@ export function MobileAnalyzeLayout({
       <MobileTopBar
         gpu={gpu}
         weight={weight}
+        engine={engine}
         gpuOptions={gpuOptions}
         weightOptions={weightOptions}
+        engineOptions={engineOptions}
         onGpuChange={onGpuChange}
         onWeightChange={onWeightChange}
+        onEngineChange={onEngineChange}
         userDisplayName={userDisplayName}
         onLogout={onLogout}
         isAnalyzing={isAnalyzing}

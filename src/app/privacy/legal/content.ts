@@ -69,7 +69,7 @@ export const legalContent = `# 隐私政策与服务协议
 ### 4.2 安全措施
 
 - **传输加密**：全站强制 HTTPS，API 通信使用 TLS 1.3。
-- **令牌管理**：Bearer Token 存储在浏览器 \`localStorage\`，每次请求通过 Authorization 头传递，后端无状态验证。
+- **令牌管理**：智子会话 Token 由后端写入 httpOnly + Secure + SameSite Cookie，浏览器同源请求自动携带，前端 JavaScript 无法读取，后端无状态验证。
 - **哈希隔离**：用户身份标识（手机号/邮箱）仅在后端进行 SHA256 单向哈希，前端不接触明文。
 - **预签名上传**：SGF 文件上传使用 Cloudflare R2 预签名 URL（有效期 300 秒），仅限授权用户上传至其个人目录。
 - **数据库访问**：Prisma ORM 参数化查询，防止 SQL 注入；生产数据库仅允许内网访问（或通过 Neon/Supabase 连接池）。
@@ -144,12 +144,12 @@ export const legalContent = `# 隐私政策与服务协议
 
 ## 七、Cookie 与本地存储
 
-本应用使用 \`localStorage\` 存储：
+本应用使用 httpOnly Cookie 与 \`localStorage\`：
 
-- 认证 Token（仅用于自动登录，不与其他站点共享）；
-- 用户偏好设置（如贴目默认值、上次使用的 GPU 配置）。
+- 会话 Token 存储在 httpOnly + Secure + SameSite Cookie 中（仅用于自动登录，前端脚本无法读取，不与其他站点共享）；
+- \`localStorage\` 仅存储非敏感的用户偏好设置（如贴目默认值、上次使用的 GPU 配置）与展示用的账号信息。
 
-您可以通过浏览器设置清除 \`localStorage\` 中存储的 Token 和偏好设置，清除后需重新登录。我们不使用第三方追踪 Cookie，也不向广告平台发送浏览数据。
+您可以通过浏览器设置清除 Cookie 与 \`localStorage\`，清除后需重新登录。我们不使用第三方追踪 Cookie，也不向广告平台发送浏览数据。
 
 ---
 

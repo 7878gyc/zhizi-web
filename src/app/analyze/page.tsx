@@ -14,9 +14,9 @@ import HawkEyePanel from '@/components/hawk-eye-panel';
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { getToken, removeToken, saveUser, getUser } from '@/lib/auth';
+import { saveUser, getUser, logout, fetchCurrentUser } from '@/lib/auth';
 import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
-import { gtpToCoord } from '@/lib/go-types';
+import { gtpToCoord, GPU_TYPES, WEIGHTS, KATA_ENGINES, DEFAULT_ENGINE } from '@/lib/go-types';
 import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
 import {
@@ -46,9 +46,9 @@ export default function AnalyzePage() {
     platform: 'all',
     engineType: 'go',
     gpuType: '1x',
-    kataName: 'katago-TENSORRT',
+    kataName: DEFAULT_ENGINE,
     kataWeight: '28bnbt',
-    label: '28b (标准) 1x GPU',
+    label: '28b-nbt (标准) 1x GPU',
   });
   const [hoverCoord, setHoverCoord] = useState<{ row: number; col: number } | null>(null);
   const sgfInputRef = useRef<HTMLInputElement>(null);
@@ -73,32 +73,23 @@ export default function AnalyzePage() {
   // --- Auth ---
   useEffect(() => {
     if (analysisMode === 'remote') return;
-    if (!getToken()) {
-      router.replace('/login');
-      return;
-    }
+    let active = true;
     const cached = getUser();
     if (cached) setUserInfo(cached as { phone?: string; email?: string; username?: string });
-    fetchUserInfo();
-  }, [router, analysisMode]);
-
-  const fetchUserInfo = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      const resp = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const info = { phone: data.phone, email: data.email, username: data.username || data.nickname };
-        setUserInfo(info);
-        saveUser(info);
+    fetchCurrentUser().then((user) => {
+      if (!active) return;
+      if (!user) {
+        router.replace('/login');
+        return;
       }
-    } catch {
-      /* ignore */
-    }
-  }, []);
+      const info = { phone: user.phone, email: user.email, username: user.username || user.nickname };
+      setUserInfo(info as { phone?: string; email?: string; username?: string });
+      saveUser(info);
+    });
+    return () => {
+      active = false;
+    };
+  }, [router, analysisMode]);
 
   // --- Game state ---
   const {
@@ -134,7 +125,6 @@ export default function AnalyzePage() {
     isAnalyzing,
     isConnected,
     isConnecting,
-    aiReady,
     error: analysisError,
     logs,
     connect,
@@ -170,16 +160,14 @@ export default function AnalyzePage() {
     }
   }, [currentWinrate, setCurrentWinrate]);
 
-  // --- Sync and analyze on move change ---
+  // --- Sync and analyze on move change / connection ---
   useEffect(() => {
     if (!isConnected) {
       prevMoveCountRef.current = -1;
       return;
     }
-    // Wait for engine to be ready before issuing the first analysis.
-    // If the engine is not ready yet, leave prevMoveCountRef untouched so
-    // the effect re-runs (and triggers syncAndAnalyze) once aiReady flips true.
-    if (!aiReady) return;
+    // 连接建立后即把盘面交给 hook；hook 会在引擎 ready（含重连后）时
+    // 整盘重放并 kata-analyze，避免这里和重连逻辑重复触发。
     if (gtpMoves.length === prevMoveCountRef.current) return;
 
     const oldIdx = prevMoveCountRef.current;
@@ -205,7 +193,7 @@ export default function AnalyzePage() {
       player: currentPlayer,
       moves: gtpMoves,
     });
-  }, [isConnected, aiReady, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
+  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, syncAndAnalyze]);
 
   // --- Load cached analysis on tree navigation ---
   useEffect(() => {
@@ -252,12 +240,8 @@ export default function AnalyzePage() {
   // --- Handlers ---
 
   const handleStartAnalysis = useCallback(() => {
-    if (getToken()) {
-      connect(selectedConfig);
-    } else {
-      router.replace('/login');
-    }
-  }, [selectedConfig, connect, router]);
+    connect(selectedConfig);
+  }, [selectedConfig, connect]);
 
   const handleStopAnalysis = useCallback(() => {
     setIsAutoAnalyzing(false);
@@ -276,8 +260,7 @@ export default function AnalyzePage() {
   const handleLogout = useCallback(() => {
     setIsAutoAnalyzing(false);
     disconnect();
-    removeToken();
-    router.replace('/login');
+    logout().finally(() => router.replace('/login'));
   }, [disconnect, router]);
 
   // --- SGF import: local file ---
@@ -346,7 +329,7 @@ export default function AnalyzePage() {
   const handleOpenCloudImport = useCallback(() => {
     setShowCloudImport(true);
     setCloudError('');
-    fetchCloudRecords(getToken());
+    fetchCloudRecords();
   }, [fetchCloudRecords]);
 
   const handleSelectCloudRecord = useCallback(
@@ -354,12 +337,9 @@ export default function AnalyzePage() {
       const { id } = rec;
       setCloudImporting(id);
       setCloudError('');
-      const token = getToken();
 
       try {
-        const dlResp = await fetch(`/api/records/${id}/download`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const dlResp = await fetch(`/api/records/${id}/download`);
         const dlData = await dlResp.json();
         if (!dlResp.ok) throw new Error(dlData.error || '获取下载链接失败');
 
@@ -396,7 +376,7 @@ export default function AnalyzePage() {
 
   const handleDeleteCloudRecord = useCallback(
     (id: string, fileName: string) => {
-      deleteCloudRecord(id, fileName, getToken());
+      deleteCloudRecord(id, fileName);
       if (cloudSourceRecordId === id) {
         setCloudSourceRecordId(null);
         cloudSourceFileKeyRef.current = null;
@@ -459,7 +439,6 @@ export default function AnalyzePage() {
       const baseName =
         playerBlack && playerWhite ? `${playerBlack}vs${playerWhite}` : `新盘面-${timestamp}`;
       const fileName = `${baseName}.sgf`;
-      const token = getToken();
       const isOverwrite =
         cloudSourceRecordId !== null && cloudSourceFileKeyRef.current !== null;
 
@@ -468,7 +447,7 @@ export default function AnalyzePage() {
 
       const uploadResp = await fetch('/api/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(uploadBody),
       });
       if (!uploadResp.ok) {
@@ -487,7 +466,7 @@ export default function AnalyzePage() {
       if (isOverwrite) {
         await fetch(`/api/records/${cloudSourceRecordId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileName }),
         });
         setCloudSourceRecordId(null);
@@ -495,7 +474,7 @@ export default function AnalyzePage() {
       } else {
         await fetch('/api/records', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
         });
       }
@@ -715,10 +694,13 @@ export default function AnalyzePage() {
           onSelectMoveFromWinrate={handleWinrateClick}
           gpu={selectedConfig.gpuType}
           weight={selectedConfig.kataWeight}
-          gpuOptions={['1x', '2x', '3x', '4x', 'vip-share']}
-          weightOptions={['18b', '28bnbt', 'fdx']}
+          engine={selectedConfig.kataName}
+          gpuOptions={GPU_TYPES.map((g) => g.value)}
+          weightOptions={WEIGHTS.map((w) => w.value)}
+          engineOptions={KATA_ENGINES.map((e) => e.value)}
           onGpuChange={(g) => setSelectedConfig((p) => ({ ...p, gpuType: g }))}
           onWeightChange={(w) => setSelectedConfig((p) => ({ ...p, kataWeight: w }))}
+          onEngineChange={(e) => setSelectedConfig((p) => ({ ...p, kataName: e }))}
           blackName={playerBlack}
           whiteName={playerWhite}
           onBlackNameChange={setPlayerBlack}

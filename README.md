@@ -7,7 +7,7 @@
 - **登录认证**：手机号/邮箱 + 密码登录、短信验证码登录，通过后端代理转发 `zhizigo.com` API
 - **交互式棋盘**：Canvas 渲染 19x19 围棋盘，支持落子、悔棋、重放、棋盘尺寸切换（9/13/19 路）
 - **AI 实时分析**：通过 Socket.IO 连接 KataGo 引擎，获取胜率走势和最佳推荐落子
-- **多配置选择**：GPU 类型（1x/2x/3x/4x/VIP 共享）、权重（18b/28bnbt/fdx）
+- **多配置选择**：GPU 类型（1x/3x/6x/12x/24x/VIP 共享）、引擎（TensorRT/CUDA）、权重（18bnbt/28bnbt/fdx）
 - **棋盘候选点**：LizzieYZY 风格的彩色选点（红→绿渐变，最佳为青色 + 蓝环），标注胜率与目差
 - **变化图预览**：点击推荐落子查看 AI 推演的变化图（PV），预览时棋盘自动隐藏彩色选点
 - **鹰眼分析**：AI 吻合率、首选命中率、问题手标注（疑问/失误/恶手/大恶手），问题手列表可点击跳转，数据随 AI 实时刷新
@@ -141,7 +141,7 @@ src/
     ├── go-types.ts               # 围棋类型定义、坐标转换、分析数据解析
     ├── sgf.ts                    # SGF 生成（含 LZ/注释属性）、坐标转换
     ├── sgf-parser.ts             # SGF 文件解析器（含 LZ 属性解析）
-    ├── auth.ts                   # Token 管理工具（localStorage）
+    ├── auth.ts                   # 客户端：用户展示信息缓存 + 会话校验（不再存 token）
     ├── auth-server.ts            # 服务端认证（extractUserHash + SHA256）
     ├── prisma.ts                 # PrismaClient 单例
     ├── r2-client.ts              # Cloudflare R2 S3 客户端
@@ -176,11 +176,17 @@ src/
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/login` | POST | 密码登录（代理到 zhizigo.com） |
-| `/api/auth/send-code` | POST | 发送短信验证码 |
+| `/api/auth/login` | POST | 密码登录（代理到 zhizigo.com，成功后写入 httpOnly Cookie） |
+| `/api/auth/send-code` | POST | 发送短信/邮箱验证码 |
 | `/api/auth/fast-login` | POST | 验证码快速登录 |
 | `/api/auth/me` | GET | 获取当前用户信息 |
+| `/api/auth/logout` | POST | 登出（清除 httpOnly Cookie） |
 | `/api/auth/fetch-socketio-token` | POST | 获取 KataGo 引擎连接令牌 |
+| `/api/cluster/account/register` | POST | 注册（需先 send-code type=register） |
+| `/api/cluster/account/reset-password` | POST | 重置密码（成功后写入新会话 Cookie） |
+| `/api/cluster/account/change-password` | POST | 修改密码（响应不含新 token，需重新登录） |
+| `/api/cluster/account/change-phone` | POST | 更换手机号/邮箱 |
+| `/api/cluster/account/me` | PUT | 更新账户（仅 membershipAutoRenew） |
 | `/api/foxwq` | POST | 爬取野狐围棋棋谱内容 |
 | `/api/upload` | POST | 生成 Cloudflare R2 预签名上传 URL |
 | `/api/records` | GET | 获取当前用户的棋谱列表 |
@@ -227,7 +233,7 @@ src/
 └──────────────┘
 ```
 
-**用户标识流程**：前端发送请求时不传递任何用户信息，后端从 Bearer token 独立完成身份验证和哈希计算。SHA256 运算仅在后端执行，前端不接触用户手机号/邮箱原文。
+**用户标识流程**：前端发送同源请求时由浏览器自动携带 httpOnly Cookie 中的会话 token，后端据此独立完成身份验证和哈希计算。SHA256 运算仅在后端执行，前端不接触用户手机号/邮箱原文，也读不到 token。
 
 **文件存储隔离**：每个用户的 SGF 文件存储在独立的 R2 路径 `records/{userHash}/` 下，不同用户的文件通过哈希值天然隔离。
 
@@ -327,12 +333,13 @@ model Record {
 
 基于智子围棋开放平台 v1.1.0，核心流程：
 
-1. 通过 `/api/auth/fetch-socketio-token` 获取连接令牌和 URL
+1. 通过 `/api/auth/fetch-socketio-token` 获取连接令牌和 URL（每次连接/重连都取新令牌，不复用旧令牌）
 2. 使用 Socket.IO 连接 KataGo 引擎（`/socket.io.v4` 路径）
-3. 发送 GTP 命令同步棋盘状态：`boardsize`、`komi`、`clear_board`、`play`
-4. 发送 `kata-analyze B/W 50` 启动分析（50cs = 0.5s 间隔）
-5. 引擎通过 `stdout` 事件持续返回 `info` 行，解析胜率、选点、PV 等信息
-6. 胜率统一转换为黑方视角存储和展示
+3. `stdout` 事件按流缓冲，仅在收到完整 `\n` 行时解析；一次事件可能是半行，也可能是 `{ data: binary }` 二进制块
+4. GTP 命令串行、不流水线：给每条命令加数字 ID，收到 `= <id>` 成功响应后再发下一条。同步顺序固定为 `boardsize` → `kata-set-rules` → `komi` → `clear_board` → 让子 → `play...` → `kata-analyze B/W 50`
+5. 引擎通过 `stdout` 持续返回 `info` 行，解析胜率、选点、PV 等信息（50cs = 0.5s 间隔）
+6. 断开前先发送 `stop`；重连时丢弃旧 GTP、取新令牌、等 `ready` 后整盘重放再 `kata-analyze`
+7. 胜率统一转换为黑方视角存储和展示
 
 ## 注意事项
 

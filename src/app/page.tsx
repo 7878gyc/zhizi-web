@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { TOKEN_KEY } from '@/lib/auth';
+import { AuthRedirect } from '@/components/auth-redirect';
 
 export const metadata: Metadata = {
   title: '智子围棋 · AI 复盘教练 | 在线围棋AI分析平台',
@@ -65,22 +65,8 @@ const features = [
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 font-sans text-slate-900 dark:text-slate-100">
-      {/*
-        已登录用户自动跳转到分析页，避免看到营销首页。
-        键名直接引用 src/lib/auth.ts 导出的 TOKEN_KEY（zhizi_token），
-        与服务端、登录页保持单一来源，修改键名时无需再同步此处。
-      */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `(function() {
-  try {
-    if (window.localStorage.getItem('${TOKEN_KEY}')) {
-      window.location.replace('/analyze');
-    }
-  } catch (e) {}
-})();`,
-        }}
-      />
+      {/* 已登录用户自动跳转到分析页，避免看到营销首页。 */}
+      <AuthRedirect />
 
       {/* Hero 区 */}
       <section className="pt-20 pb-14 md:pt-28 md:pb-20 px-6 text-center">
