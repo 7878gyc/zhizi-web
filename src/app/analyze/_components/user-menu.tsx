@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { fetchCurrentUser } from '@/lib/auth';
+import { fetchCurrentUser, saveUser } from '@/lib/auth';
 import { mapZhiziError } from '@/lib/zhizi-errors';
 
 // ---------- Types ----------
@@ -797,7 +797,8 @@ function ChangePasswordDialog({ open, onClose, onChanged }: ChangePasswordDialog
     try {
       await api('/api/cluster/account/change-password', {
         method: 'POST',
-        body: JSON.stringify({ oldPassword, newPassword }),
+        // 官方字段：oldPassword + password
+        body: JSON.stringify({ oldPassword, password: newPassword }),
       });
       onChanged();
     } catch (e: unknown) {
@@ -892,6 +893,7 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
   if (!open) return null;
 
   const accountField: Record<string, string> = contactType === 'phone' ? { phone: newAccount } : { email: newAccount };
+  const sendCodeType = contactType === 'phone' ? 'change_phone' : 'change_email';
 
   const sendCode = async () => {
     setError('');
@@ -903,7 +905,7 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
     try {
       await api('/api/auth/send-code', {
         method: 'POST',
-        body: JSON.stringify({ ...accountField, type: 'change_phone' }),
+        body: JSON.stringify({ ...accountField, type: sendCodeType }),
       });
       setCountdown(60);
       const timer = setInterval(() => {
@@ -938,7 +940,9 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
         method: 'POST',
         body: JSON.stringify({ ...accountField, verificationCode: code }),
       });
-      await fetchCurrentUser();
+      // 更换成功后官方会轮换 token，重新拉取并缓存最新账号信息
+      const user = await fetchCurrentUser();
+      if (user) saveUser(user);
       setDone(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '更换失败');

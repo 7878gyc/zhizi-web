@@ -9,14 +9,35 @@ export interface AuthErrorPayload {
  * 界面只显示本地文案，绝不把原始 key 抛给用户。
  */
 export const ZHIZI_ERROR_MESSAGES: Record<string, string> = {
+  // 认证
+  invalid_data: '请求参数有误',
+  invalid_credentials: '密码不能为空',
+  invalid_phone: '手机号格式不正确',
+  invalid_email: '邮箱格式不正确',
   invalid_password: '密码错误',
   invalid_verification_code: '验证码错误或过期',
   fast_login_too_frequent: '尝试过于频繁，请稍后再试',
-  invalid_phone: '手机号格式不正确',
-  invalid_email: '邮箱格式不正确',
-  invalid_data: '请求参数有误',
+  duplicate_phone: '该手机号已注册',
+  duplicate_email: '该邮箱已注册',
   not_found: '账号不存在',
+  password_too_short: '密码至少 8 位',
+  // 引擎令牌
   failed_to_insert_socket_io_token: '获取分析令牌失败，请稍后重试',
+  // 计费
+  failed_aggerate: '余额获取失败，请稍后重试',
+  count_usage_error: '消费记录加载失败',
+  list_usages_error: '消费记录加载失败',
+  count_credits_error: '充值记录加载失败',
+  list_credits_error: '充值记录加载失败',
+  // 支付
+  invalid_pay_type: '不支持的支付方式',
+  invalid_amount: '支付金额有误',
+  missing_product_name: '缺少商品信息',
+  invalid_product_name: '商品信息有误',
+  failed_create_prepay_id: '生成支付二维码失败',
+  failed_insert_order: '创建订单失败',
+  order_not_found: '订单不存在或不属于当前用户',
+  // 会话
   not_authorized: '登录已过期，请重新登录',
 };
 
