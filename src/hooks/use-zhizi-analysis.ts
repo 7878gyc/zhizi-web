@@ -119,24 +119,25 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       const signal = match[1];
       const explicitId = match[2] ? Number(match[2]) : null;
       let pending: PendingCommand | undefined;
-      let id = explicitId;
-      if (id !== null && pendingRef.current.has(id)) {
-        pending = pendingRef.current.get(id);
-        pendingRef.current.delete(id);
+
+      if (explicitId !== null) {
+        // 响应带数字 ID：只认 pending 里登记过的命令。
+        // kata-analyze 不在 pending 中，它迟到的 `= <id>` 必须直接丢弃，
+        // 否则会误把下一条 boardsize/play 判成成功（串单）。
+        pending = pendingRef.current.get(explicitId);
+        if (pending) pendingRef.current.delete(explicitId);
+        else return;
       } else {
-        // 引擎未回显 ID 时的兜底：串行发送时最多只有一个在途命令
+        // 响应没带 ID：串行发送时最多只有一个在途命令，取队列首条兜底。
         const first = pendingRef.current.entries().next();
-        if (!first.done) {
-          id = first.value[0];
-          pending = first.value[1];
-          pendingRef.current.delete(id);
-        }
+        if (first.done) return;
+        pending = first.value[1];
+        pendingRef.current.delete(first.value[0]);
       }
-      if (pending) {
-        clearTimeout(pending.timer);
-        if (signal === '=') pending.resolve();
-        else pending.reject(new Error(line.replace(/^\s*[=?]\s*\d*\s*/, '').trim() || 'GTP error'));
-      }
+
+      clearTimeout(pending.timer);
+      if (signal === '=') pending.resolve();
+      else pending.reject(new Error(line.replace(/^\s*[=?]\s*\d*\s*/, '').trim() || 'GTP error'));
       return;
     }
 
@@ -263,13 +264,13 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
           return;
         }
 
-      if (socketRef.current) {
-        // 卸载时也必须先 stop，否则引擎会话会继续运行到平台超时并继续计费
-        if (socketRef.current.connected) socketRef.current.emit('stdin', 'stop\n');
-        socketRef.current.removeAllListeners();
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+        if (socketRef.current) {
+          // 丢弃旧连接：先 stop 再断开，避免残留会话继续计费
+          if (socketRef.current.connected) socketRef.current.emit('stdin', 'stop\n');
+          socketRef.current.removeAllListeners();
+          socketRef.current.disconnect();
+          socketRef.current = null;
+        }
         bufferRef.current = '';
         setAiReady(false);
         aiReadyRef.current = false;
@@ -455,15 +456,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   useEffect(() => {
     return () => {
       mountedRef.current = false;
-      closedByUserRef.current = true;
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      if (socketRef.current) {
-        socketRef.current.removeAllListeners();
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      // 复用 disconnect()：会先 emit stdin stop 再断开，避免卸载后引擎会话跑到平台超时
+      disconnect();
     };
-  }, []);
+  }, [disconnect]);
 
   return {
     analysisData,
