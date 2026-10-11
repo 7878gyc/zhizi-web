@@ -1,5 +1,7 @@
 import { MetadataRoute } from 'next';
 
+const BASE = 'https://zhizi.110708.xyz';
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
@@ -7,5 +9,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/', '/_next/', '/static/'],
     },
+    sitemap: `${BASE}/sitemap.xml`,
   };
 }

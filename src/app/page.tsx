@@ -1,159 +1,218 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { AuthRedirect } from '@/components/auth-redirect';
+import Image from 'next/image';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { Zap, Eye, FileText, Cloud, Github } from 'lucide-react';
+import { AUTH_COOKIE } from '@/lib/zhizi-auth';
+
+const GITHUB_URL = 'https://github.com/7878gyc/zhizi-web';
 
 export const metadata: Metadata = {
-  title: '智子围棋 · AI 复盘教练 | 在线围棋AI分析平台',
+  title: '在线围棋 AI 复盘工具 | 智子围棋 Web',
   description:
-    '智子围棋 AI 分析平台，基于 KataGo 引擎。新用户注册即送 0.5 元体验金，按需付费（¥1.2/h）或包月（¥30）。实时胜率曲线、鹰眼问题手标注、AI 推荐选点与变化图，支持 SGF 导入导出和云棋谱库，助你快速涨棋。',
-  keywords: [
-    '智子围棋',
-    '围棋AI',
-    'KataGo',
-    '在线复盘',
-    '胜率分析',
-    '鹰眼分析',
-    '问题手',
-    '围棋教学',
-    'SGF棋谱',
-    '云棋谱库',
-    '围棋对局分析',
-    'AI围棋',
-    '棋力提升',
-  ],
-  openGraph: {
-    title: '智子围棋 · AI 复盘教练 | 在线围棋AI分析平台',
-    description:
-      '智子围棋 AI 分析平台，基于 KataGo 引擎。新用户注册即送 0.5 元体验金，按需付费（¥1.2/h）或包月（¥30）。实时胜率曲线、鹰眼问题手标注、AI 推荐选点与变化图，支持 SGF 导入导出和云棋谱库，助你快速涨棋。',
-    type: 'website',
-    url: 'https://zhizi.110708.xyz',
+    '第三方开源围棋 AI 复盘工具，接入智子官方 KataGo 算力。实时胜率曲线、鹰眼问题手诊断、AI 推荐选点与变化图，支持 SGF 导入导出与云棋谱库。',
+  alternates: {
+    canonical: '/',
   },
 };
 
-/**
- * 功能亮点卡片数据。
- * 说明：所有文案已确认，请严格按照以下文字输出，不要改动内容。
- */
 const features = [
   {
-    icon: '⚡',
+    Icon: Zap,
     title: '实时 AI 分析',
-    description: '落子即算，胜率走势和最佳选点实时更新，变化图预览帮你理解 AI 思路。',
+    description: '落子即算，胜率走势与最佳选点实时更新，变化图预览帮你理解 AI 思路。',
   },
   {
-    icon: '🔍',
+    Icon: Eye,
     title: '鹰眼诊断',
-    description: '自动标记疑问、失误、恶手，标注吻合率与首选率，问题手列表可点击跳转，精准复盘。',
+    description: '自动标记疑问、失误、恶手，标注吻合率与首选率，问题手可点击跳转复盘。',
   },
   {
-    icon: '📂',
+    Icon: FileText,
     title: '棋谱全兼容',
-    description: '导入 SGF 文件、解析野狐链接，导出含 AI 分析属性的 SGF，方便本地保存或分享。',
+    description: '导入 SGF 文件、解析野狐链接，导出含 AI 分析属性的 SGF，方便保存或分享。',
   },
   {
-    icon: '☁️',
+    Icon: Cloud,
     title: '云棋谱库',
-    description: '一键保存到云端，多设备同步，随时查看、下载或删除，数据安全隔离。',
-  },
-  {
-    icon: '📱',
-    title: '移动端适配',
-    description: '无论手机还是电脑，操作面板自动调整，碎片时间也能高效复盘。',
+    description: '一键保存到云端，多设备同步，随时查看、下载或删除，数据按用户隔离。',
   },
 ];
 
-export default function HomePage() {
+const trustItems = [
+  '基于智子官方 KataGo 算力',
+  '开源透明 · MIT 协议',
+  '云端加密存储',
+  '移动端适配',
+];
+
+export default async function HomePage() {
+  // 服务端读取会话 Cookie，已登录直接进入分析页，避免先闪一下营销页
+  const store = await cookies();
+  if (store.get(AUTH_COOKIE)) redirect('/analyze');
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 font-sans text-slate-900 dark:text-slate-100">
-      {/* 已登录用户自动跳转到分析页，避免看到营销首页。 */}
-      <AuthRedirect />
-
-      {/* Hero 区 */}
-      <section className="pt-20 pb-14 md:pt-28 md:pb-20 px-6 text-center">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-          智子围棋 · <span className="text-blue-600 dark:text-blue-500">你的 AI 复盘教练</span>
-        </h1>
-        <p className="mt-6 mx-auto max-w-2xl text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-          接入 KataGo 引擎，实时分析每一步，胜率、问题手、推荐落子一目了然。
-          <br />
-          支持 9/13/19 路棋盘，从入门到段位，让每一盘对局都有收获。
-        </p>
-        <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
-          按需付费 ¥1.2/小时 · 包月 ¥30 ·{' '}
-          <span className="text-blue-600 dark:text-blue-500 font-medium">🎁 新用户送 ¥0.5 体验金</span>
-        </p>
-        <div className="mt-8">
-          <Link
-            href="/login"
-            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3.5 rounded-lg shadow-lg shadow-blue-600/25 hover:shadow-xl hover:shadow-blue-600/30 transition-all"
-          >
-            🎁 注册即送 ¥0.5 体验金
+    <main className="min-h-screen bg-[#0F0F23] text-[#E0E0E0] font-sans">
+      {/* 顶栏 */}
+      <header className="sticky top-0 z-40 border-b border-[#2A3A5C]/40 bg-[#0F0F23]/85 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
+          <Link href="/" className="font-bold text-[#E8B931] tracking-wide">
+            智子围棋 Web
           </Link>
-        </div>
-      </section>
-
-      {/* 信任标识条 */}
-      <section className="px-6 pb-6">
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-0 text-xs text-slate-500 dark:text-slate-400">
-          <span>✓ 基于智子官方 KataGo 算力</span>
-          <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mx-3">|</span>
-          <span>✓ 开源透明 · MIT 协议</span>
-          <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mx-3">|</span>
-          <span>✓ 云端加密存储</span>
-        </div>
-      </section>
-
-      {/* 功能亮点区 */}
-      <section className="px-6 py-14 md:py-20">
-        <div className="text-center mb-10">
-          <h2 className="text-2xl sm:text-3xl font-bold">让每一盘对局都有收获</h2>
-          <p className="mt-3 text-slate-600 dark:text-slate-300">从入门到段位，智子围棋陪你每一步。</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-5xl mx-auto">
-          {features.map((f) => (
-            <div
-              key={f.title}
-              className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
+          <nav className="flex items-center gap-4 text-sm">
+            <Link href="/about" className="text-[#8B8FA3] hover:text-[#E8B931] transition-colors">
+              关于
+            </Link>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#8B8FA3] hover:text-[#E8B931] transition-colors flex items-center gap-1"
             >
-              <div className="text-3xl">{f.icon}</div>
-              <h3 className="mt-3 font-semibold text-lg">{f.title}</h3>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{f.description}</p>
+              <Github className="w-4 h-4" />
+              GitHub
+            </a>
+            <Link
+              href="/login"
+              className="px-3 py-1.5 rounded-lg bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] font-medium transition-colors"
+            >
+              登录
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="px-6 pt-14 pb-10 md:pt-20 md:pb-16">
+        <div className="mx-auto max-w-6xl grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
+          <div>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-tight">
+              用 KataGo 复盘，<br />
+              <span className="text-[#E8B931]">每一手都看得懂</span>
+            </h1>
+            <p className="mt-6 text-base sm:text-lg text-[#8B8FA3] leading-relaxed">
+              接入智子官方 KataGo 算力，实时计算胜率、推荐选点与变化图，
+              自动标注问题手，支持 9/13/19 路棋盘。
+            </p>
+            <p className="mt-4 text-sm text-[#4A4A6A]">
+              第三方开源客户端，算力与账号由智子官方提供。
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/login?mode=register"
+                className="inline-flex items-center bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] font-semibold px-7 py-3 rounded-lg transition-colors"
+              >
+                免费注册
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex items-center bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#E0E0E0] font-medium px-7 py-3 rounded-lg transition-colors"
+              >
+                登录
+              </Link>
             </div>
+          </div>
+
+          <div className="w-full">
+            <Image
+              src="/hero-analysis.svg"
+              alt="围棋 AI 分析界面：棋盘、胜率曲线与候选选点"
+              width={900}
+              height={620}
+              priority
+              className="w-full h-auto rounded-2xl border border-[#2A3A5C]/40"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* 信任条 */}
+      <section className="px-6 pb-4">
+        <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-[#8B8FA3]">
+          {trustItems.map((item) => (
+            <span key={item} className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#E8B931]" />
+              {item}
+            </span>
           ))}
         </div>
       </section>
 
-      {/* 底部行动号召区 */}
-      <section className="px-6 pb-16 md:pb-20">
-        <div className="max-w-3xl mx-auto bg-blue-50 dark:bg-blue-950/40 rounded-2xl px-6 py-12 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold">Ready to 涨棋？</h2>
-          <p className="mt-3 text-slate-600 dark:text-slate-300">
-            立即体验 KataGo 顶级算力，新用户送 ¥0.5 试用
+      {/* 功能亮点 */}
+      <section className="px-6 py-14 md:py-20">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-bold">让每一盘对局都有收获</h2>
+            <p className="mt-3 text-[#8B8FA3]">从入门到段位，复盘每一步。</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {features.map(({ Icon, title, description }) => (
+              <div
+                key={title}
+                className="bg-[#16213E]/60 border border-[#2A3A5C]/40 rounded-xl p-6 hover:border-[#E8B931]/40 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[#E8B931]/15 text-[#E8B931] flex items-center justify-center">
+                  <Icon className="w-5 h-5" />
+                </div>
+                <h3 className="mt-4 font-semibold text-lg text-[#E0E0E0]">{title}</h3>
+                <p className="mt-2 text-sm text-[#8B8FA3] leading-relaxed">{description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 计费说明 */}
+      <section className="px-6 pb-14 md:pb-20">
+        <div className="mx-auto max-w-3xl text-center bg-[#16213E]/60 border border-[#2A3A5C]/40 rounded-2xl px-6 py-10">
+          <h2 className="text-xl sm:text-2xl font-bold">按需扣余额 / VIP 共享算力</h2>
+          <p className="mt-3 text-sm text-[#8B8FA3] leading-relaxed">
+            使用多少扣多少，价格以账户内产品页面为准。注册智子账号即送体验金，先试后付。
           </p>
+        </div>
+      </section>
+
+      {/* 底部行动号召 */}
+      <section className="px-6 pb-16 md:pb-20">
+        <div className="mx-auto max-w-3xl bg-[#E8B931]/10 border border-[#E8B931]/25 rounded-2xl px-6 py-12 text-center">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#E8B931]">开始你的 AI 复盘</h2>
+          <p className="mt-3 text-[#8B8FA3]">接入 KataGo 算力，看清每一步的好坏。</p>
           <div className="mt-7">
             <Link
-              href="/login"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3.5 rounded-lg shadow-lg shadow-blue-600/25 hover:shadow-xl hover:shadow-blue-600/30 transition-all"
+              href="/login?mode=register"
+              className="inline-block bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] font-semibold px-8 py-3.5 rounded-lg transition-colors"
             >
-              🎁 领取 0.5 元试用金
+              免费注册
             </Link>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 px-6 py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-        <p>© 2026 智子围棋 Web</p>
+      <footer className="border-t border-[#2A3A5C]/40 px-6 py-8 text-center text-xs text-[#4A4A6A]">
+        <p className="max-w-3xl mx-auto leading-relaxed">
+          智子围棋 Web 是第三方开源客户端，算力与账号由智子官方提供，与智子围棋官方无雇佣或合作关系。
+        </p>
         <p className="mt-3">
-          <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+          <Link href="/about" className="hover:text-[#E8B931] transition-colors">
             关于
           </Link>
-          <span className="mx-2 text-slate-300 dark:text-slate-600">|</span>
-          <Link href="/privacy/human" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+          <span className="mx-2 text-[#2A3A5C]">|</span>
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#E8B931] transition-colors"
+          >
+            GitHub
+          </a>
+          <span className="mx-2 text-[#2A3A5C]">|</span>
+          <Link href="/privacy/human" className="hover:text-[#E8B931] transition-colors">
             隐私说明
           </Link>
-          <span className="mx-2 text-slate-300 dark:text-slate-600">|</span>
-          <Link href="/privacy/legal" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+          <span className="mx-2 text-[#2A3A5C]">|</span>
+          <Link href="/privacy/legal" className="hover:text-[#E8B931] transition-colors">
             完整法律条款
           </Link>
         </p>

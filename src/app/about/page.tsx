@@ -4,6 +4,11 @@ import { aboutContent } from './content';
 
 export const metadata: Metadata = {
   title: '关于',
+  description:
+    '智子围棋 Web 是第三方开源的围棋 AI 复盘工具，接入智子官方 KataGo 算力。了解项目定位、与智子官方的关系、技术栈与反馈渠道。',
+  alternates: {
+    canonical: '/about',
+  },
 };
 
 export default function AboutPage() {

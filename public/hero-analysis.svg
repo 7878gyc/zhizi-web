@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620" fill="none">
+  <defs>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0 H0 V44" fill="none" stroke="#2A3A5C" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="wr" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8B931" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#E8B931" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="620" rx="20" fill="#0F0F23"/>
+
+  <!-- Board -->
+  <g transform="translate(60 70)">
+    <rect x="-22" y="-22" width="396" height="396" rx="10" fill="#16213E" stroke="#2A3A5C"/>
+    <rect x="0" y="0" width="352" height="352" fill="url(#grid)" opacity="0.9"/>
+    <g fill="#E8B931" opacity="0.85">
+      <circle cx="176" cy="176" r="4"/>
+      <circle cx="88" cy="88" r="4"/>
+      <circle cx="264" cy="88" r="4"/>
+      <circle cx="88" cy="264" r="4"/>
+      <circle cx="264" cy="264" r="4"/>
+    </g>
+    <!-- stones -->
+    <g>
+      <circle cx="132" cy="132" r="19" fill="#1A1A1A" stroke="#000" stroke-opacity="0.4"/>
+      <circle cx="220" cy="176" r="19" fill="#1A1A1A" stroke="#000" stroke-opacity="0.4"/>
+      <circle cx="176" cy="220" r="19" fill="#F0F0F0" stroke="#999" stroke-opacity="0.6"/>
+      <circle cx="264" cy="132" r="19" fill="#F0F0F0" stroke="#999" stroke-opacity="0.6"/>
+      <circle cx="88" cy="176" r="19" fill="#1A1A1A" stroke="#000" stroke-opacity="0.4"/>
+      <circle cx="176" cy="88" r="19" fill="#F0F0F0" stroke="#999" stroke-opacity="0.6"/>
+      <circle cx="264" cy="220" r="19" fill="#1A1A1A" stroke="#000" stroke-opacity="0.4"/>
+    </g>
+    <circle cx="220" cy="176" r="24" fill="none" stroke="#E8B931" stroke-width="2"/>
+  </g>
+
+  <!-- Winrate panel -->
+  <g transform="translate(500 70)">
+    <rect x="0" y="0" width="340" height="180" rx="12" fill="#16213E" stroke="#2A3A5C"/>
+    <text x="20" y="34" fill="#8B8FA3" font-family="Arial, Helvetica, sans-serif" font-size="15">Black winrate</text>
+    <text x="20" y="62" fill="#E8B931" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="bold">57.3%</text>
+    <path d="M20 150 L60 138 L100 142 L140 120 L180 126 L220 104 L260 96 L300 78 L320 72 L320 160 L20 160 Z" fill="url(#wr)" stroke="none"/>
+    <path d="M20 150 L60 138 L100 142 L140 120 L180 126 L220 104 L260 96 L300 78 L320 72" fill="none" stroke="#E8B931" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+
+  <!-- Candidate list panel -->
+  <g transform="translate(500 280)">
+    <rect x="0" y="0" width="340" height="230" rx="12" fill="#16213E" stroke="#2A3A5C"/>
+    <text x="20" y="34" fill="#8B8FA3" font-family="Arial, Helvetica, sans-serif" font-size="15">Top moves</text>
+    <g font-family="Arial, Helvetica, sans-serif" font-size="16">
+      <rect x="20" y="52" width="300" height="40" rx="8" fill="#E8B931" fill-opacity="0.14" stroke="#E8B931" stroke-opacity="0.5"/>
+      <text x="36" y="78" fill="#E8B931">Q16</text>
+      <text x="300" y="78" fill="#E8B931" text-anchor="end">57.3%</text>
+      <rect x="20" y="100" width="300" height="40" rx="8" fill="#0F0F23" stroke="#2A3A5C"/>
+      <text x="36" y="126" fill="#E0E0E0">D4</text>
+      <text x="300" y="126" fill="#8B8FA3" text-anchor="end">55.1%</text>
+      <rect x="20" y="148" width="300" height="40" rx="8" fill="#0F0F23" stroke="#2A3A5C"/>
+      <text x="36" y="174" fill="#E0E0E0">R6</text>
+      <text x="300" y="174" fill="#8B8FA3" text-anchor="end">54.0%</text>
+      <rect x="20" y="196" width="300" height="26" rx="8" fill="#0F0F23" stroke="#2A3A5C"/>
+      <text x="36" y="214" fill="#E0E0E0">C17</text>
+    </g>
+  </g>
+
+  <text x="60" y="556" fill="#8B8FA3" font-family="Arial, Helvetica, sans-serif" font-size="16">Vision &amp; winrate graph</text>
+  <text x="60" y="584" fill="#4A4A6A" font-family="Arial, Helvetica, sans-serif" font-size="14">Analyzed by KataGo on Zhizi GPU compute</text>
+</svg>

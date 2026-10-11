@@ -29,6 +29,14 @@ export default function LoginPage() {
 
   const [loginType, setLoginType] = useState<'phone' | 'email'>('phone');
   const [authMode, setAuthMode] = useState<AuthMode>('password');
+
+  // 支持深链 ?mode=register|reset|code|password，供落地页 CTA 对准
+  useEffect(() => {
+    const mode = new URLSearchParams(window.location.search).get('mode');
+    if (mode === 'register' || mode === 'reset' || mode === 'code' || mode === 'password') {
+      setAuthMode(mode);
+    }
+  }, []);
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
@@ -286,7 +294,7 @@ export default function LoginPage() {
                 onClick={() => switchMode('password')}
                 className="text-xs text-[#8B8FA3] hover:text-white"
               >
-                返回登录
+                {isRegister ? '已有账号？登录' : '返回登录'}
               </button>
             </div>
           )}

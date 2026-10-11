@@ -10,7 +10,6 @@ import MoveTree from '@/components/move-tree';
 import WinrateChart from '@/components/winrate-chart';
 import KataGoLogViewer from '@/components/katago-log-viewer';
 import HawkEyePanel from '@/components/hawk-eye-panel';
-// import RemoteEnginePanel from '@/components/remote-engine-panel'; // Module not yet created
 import { useGoGame } from '@/hooks/use-go-game';
 import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { useIsMobile } from '@/hooks/use-mobile';

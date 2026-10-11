@@ -197,8 +197,16 @@ export function MobileAnalyzeLayout({
 
       {/* Analysis error banner */}
       {analysisError && (
-        <div className="shrink-0 px-2 py-1 text-[11px] text-red-400 bg-red-500/10 border-b border-red-500/20">
-          {analysisError}
+        <div className="shrink-0 px-2 py-1 text-[11px] text-red-400 bg-red-500/10 border-b border-red-500/20 flex items-center justify-between gap-2">
+          <span className="min-w-0">{analysisError}</span>
+          {!isConnected && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('zhizi:open-recharge'))}
+              className="shrink-0 text-[#E8B931] underline"
+            >
+              去充值 / 开通 VIP
+            </button>
+          )}
         </div>
       )}
 

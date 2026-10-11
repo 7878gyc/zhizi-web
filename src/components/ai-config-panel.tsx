@@ -183,7 +183,15 @@ export default function AiConfigPanel({
 
       {error && (
         <div className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
-          {error}
+          <p>{error}</p>
+          {!isConnected && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('zhizi:open-recharge'))}
+              className="mt-1.5 text-[#E8B931] hover:underline"
+            >
+              去充值 / 开通 VIP
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -118,6 +118,42 @@ export function buildArgsString(config: AiConfig): string {
   return `--platform ${platform} --engine-type ${engineType} --gpu-type ${gpuType} --kata-name ${kataName} --kata-weight ${kataWeight}`;
 }
 
+const ALLOWED_ARG_FLAGS = new Set([
+  '--platform',
+  '--engine-type',
+  '--gpu-type',
+  '--kata-name',
+  '--kata-weight',
+]);
+
+/**
+ * 校验前端传来的 `args` 字符串（BFF 侧使用）。
+ * 只接受 buildArgsString 同一套白名单：未知 flag、缺项、非法取值都会抛错。
+ */
+export function validateArgsString(args: unknown): void {
+  if (typeof args !== 'string') throw new Error('Invalid args');
+  const tokens = args.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length % 2 !== 0) throw new Error('Invalid args');
+
+  const map: Record<string, string> = {};
+  for (let i = 0; i < tokens.length; i += 2) {
+    const flag = tokens[i];
+    const value = tokens[i + 1];
+    if (!ALLOWED_ARG_FLAGS.has(flag)) throw new Error(`Unsupported flag: ${flag}`);
+    if (map[flag] !== undefined) throw new Error(`Duplicate flag: ${flag}`);
+    map[flag] = value;
+  }
+
+  buildArgsString({
+    platform: map['--platform'] ?? '',
+    engineType: map['--engine-type'] ?? '',
+    gpuType: map['--gpu-type'] ?? '',
+    kataName: map['--kata-name'] ?? '',
+    kataWeight: map['--kata-weight'] ?? '',
+    label: '',
+  });
+}
+
 // --- Coordinate conversion ---
 const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST'; // Skip 'I'
 

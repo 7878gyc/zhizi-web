@@ -1,4 +1,4 @@
-export const humanContent = `# 📋 隐私与服务说明（人话版）
+export const humanContent = `# 隐私与服务说明（人话版）
 
 **更新日期**：2026 年 8 月 12 日  
 **生效日期**：2026 年 8 月 12 日

@@ -1160,6 +1160,13 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
   const [showChangePhone, setShowChangePhone] = useState(false);
   const [showAutoRenew, setShowAutoRenew] = useState(false);
 
+  // 供分析页在「引擎 token 失败/余额不足」时唤起充值弹窗
+  useEffect(() => {
+    const openRecharge = () => setShowRecharge(true);
+    window.addEventListener('zhizi:open-recharge', openRecharge);
+    return () => window.removeEventListener('zhizi:open-recharge', openRecharge);
+  }, []);
+
   return (
     <>
       <DropdownMenu>
