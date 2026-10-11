@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { fetchCurrentUser, saveUser } from '@/lib/auth';
 import { mapZhiziError } from '@/lib/zhizi-errors';
@@ -287,8 +288,9 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
       ts: new Date(c.createdAt).getTime(),
       big: SOURCE_LABELS[c.source ?? ''] ?? c.source ?? c.creditType ?? '充值',
       small: '',
-      amount: `+${c.amount.toFixed(2)}`,
-      amountClass: 'text-[#4ADE80]',
+      // 官方：amount 正加负扣，按符号显示
+      amount: `${c.amount >= 0 ? '+' : ''}${c.amount.toFixed(2)}`,
+      amountClass: c.amount >= 0 ? 'text-[#4ADE80]' : 'text-[#FF6B6B]',
     }));
     return [...usageRows, ...creditRows].sort((a, b) => b.ts - a.ts);
   }, [usages, credits]);
@@ -374,6 +376,8 @@ function VipDialog({ open, onClose }: VipDialogProps) {
   const [codeURL, setCodeURL] = useState('');
   const [payStatus, setPayStatus] = useState<'PENDING' | 'SUCCESS' | 'FAIL'>('PENDING');
   const [payError, setPayError] = useState('');
+  // 账号的会员自动续费偏好，下单时写入 extraInfo.autoRenew
+  const [autoRenew, setAutoRenew] = useState(false);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -397,6 +401,17 @@ function VipDialog({ open, onClose }: VipDialogProps) {
       setPayError('');
       setPaying(false);
       loadProducts();
+      let active = true;
+      api<{ membershipAutoRenew?: boolean | null }>('/api/auth/me')
+        .then((me) => {
+          if (active) setAutoRenew(!!me?.membershipAutoRenew);
+        })
+        .catch(() => {
+          /* 读取失败时按不自动续费处理 */
+        });
+      return () => {
+        active = false;
+      };
     }
   }, [open, loadProducts]);
 
@@ -425,7 +440,7 @@ function VipDialog({ open, onClose }: VipDialogProps) {
         body: '智子围棋VIP会员',
         orderType: 'PURCHASE_PRODUCT',
         productName: selected.name,
-        extraInfo: { autoRenew: false },
+        extraInfo: { autoRenew },
       });
       setCodeURL(order.nativePayRequest?.codeURL ?? '');
       setOrderId(order.id);
@@ -1034,6 +1049,103 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
   );
 }
 
+// ---------- Account: membership auto renew ----------
+
+interface MembershipAutoRenewDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+function MembershipAutoRenewDialog({ open, onClose }: MembershipAutoRenewDialogProps) {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setLoading(true);
+    setError('');
+    api<{ membershipAutoRenew?: boolean | null }>('/api/auth/me')
+      .then((me) => {
+        if (active) setEnabled(!!me?.membershipAutoRenew);
+      })
+      .catch((e: unknown) => {
+        if (active) setError(e instanceof Error ? e.message : '加载失败');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      // 官方 PUT /account/me 目前仅支持 membershipAutoRenew
+      await api('/api/cluster/account/me', {
+        method: 'PUT',
+        body: JSON.stringify({ membershipAutoRenew: enabled }),
+      });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
+      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+        <h3 className="text-sm font-bold text-[#E8B931] mb-3">会员自动续费</h3>
+
+        {loading ? (
+          <div className="py-6 text-center text-[#8B8FA3] text-sm flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> 加载中...
+          </div>
+        ) : (
+          <div className="flex items-center justify-between py-2">
+            <div className="pr-4">
+              <p className="text-sm text-[#E0E0E0]">自动续费</p>
+              <p className="text-xs text-[#8B8FA3] mt-0.5">会员到期时自动扣费续期</p>
+            </div>
+            <Switch
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              className="data-[state=checked]:bg-[#E8B931]"
+            />
+          </div>
+        )}
+
+        {error && <p className="text-xs text-[#FF6B6B] mt-3">{error}</p>}
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-2 text-sm bg-[#2A3A5C]/50 hover:bg-[#2A3A5C] text-[#8B8FA3] rounded transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={save}
+            disabled={loading || saving}
+            className="flex-1 px-3 py-2 text-sm font-medium bg-[#E8B931] hover:bg-[#F5C84A] text-[#0F0F23] rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- User menu ----------
 
 interface UserMenuProps {
@@ -1046,6 +1158,7 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
   const [showRecharge, setShowRecharge] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showChangePhone, setShowChangePhone] = useState(false);
+  const [showAutoRenew, setShowAutoRenew] = useState(false);
 
   return (
     <>
@@ -1085,6 +1198,13 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
             更换手机 / 邮箱
           </DropdownMenuItem>
           <DropdownMenuItem
+            onClick={() => setShowAutoRenew(true)}
+            className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer flex items-center gap-2"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#8B8FA3]" />
+            会员自动续费
+          </DropdownMenuItem>
+          <DropdownMenuItem
             onClick={() => setShowChangePassword(true)}
             className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer flex items-center gap-2"
           >
@@ -1104,6 +1224,7 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
       <ConsumptionDialog open={showConsumption} onClose={() => setShowConsumption(false)} />
       <RechargeDialog open={showRecharge} onClose={() => setShowRecharge(false)} />
       <ChangePhoneDialog open={showChangePhone} onClose={() => setShowChangePhone(false)} />
+      <MembershipAutoRenewDialog open={showAutoRenew} onClose={() => setShowAutoRenew(false)} />
       <ChangePasswordDialog
         open={showChangePassword}
         onClose={() => setShowChangePassword(false)}

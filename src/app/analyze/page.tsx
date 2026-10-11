@@ -154,6 +154,13 @@ export default function AnalyzePage() {
         .map((s) => s.move),
     [moveTree],
   );
+  const handicapWhiteStones = useMemo(
+    () =>
+      (moveTree.handicapStones ?? [])
+        .filter((s) => s.color === 'white')
+        .map((s) => s.move),
+    [moveTree],
+  );
 
   // --- Winrate sync ---
   const lastWinrateRef = useRef<number | null>(null);
@@ -202,8 +209,9 @@ export default function AnalyzePage() {
       player: currentPlayer,
       moves: gtpMoves,
       handicapStones,
+      handicapWhiteStones,
     });
-  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, handicapStones, syncAndAnalyze]);
+  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, handicapStones, handicapWhiteStones, syncAndAnalyze]);
 
   // --- Load cached analysis on tree navigation ---
   useEffect(() => {

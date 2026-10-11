@@ -29,6 +29,8 @@ export interface SyncParams {
   player: 'black' | 'white';
   moves: string[];
   handicapStones?: string[];
+  /** 白方预置子（SGF AW），clear_board 后以 play W 落子 */
+  handicapWhiteStones?: string[];
   analyzeVisits?: number;
 }
 
@@ -210,6 +212,12 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         if (params.handicapStones && params.handicapStones.length > 0) {
           await sendCommand(`set_free_handicap ${params.handicapStones.join(' ')}`, gen);
         }
+        if (params.handicapWhiteStones && params.handicapWhiteStones.length > 0) {
+          for (const stone of params.handicapWhiteStones) {
+            if (superseded()) return;
+            await sendCommand(`play W ${stone}`, gen);
+          }
+        }
         for (const move of params.moves) {
           if (superseded()) return;
           await sendCommand(`play ${move}`, gen);
@@ -255,11 +263,13 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
           return;
         }
 
-        if (socketRef.current) {
-          socketRef.current.removeAllListeners();
-          socketRef.current.disconnect();
-          socketRef.current = null;
-        }
+      if (socketRef.current) {
+        // 卸载时也必须先 stop，否则引擎会话会继续运行到平台超时并继续计费
+        if (socketRef.current.connected) socketRef.current.emit('stdin', 'stop\n');
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
         bufferRef.current = '';
         setAiReady(false);
         aiReadyRef.current = false;
