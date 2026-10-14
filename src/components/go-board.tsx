@@ -54,6 +54,12 @@ export default function GoBoard({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState(600);
+  const [isSized, setIsSized] = useState(false);
+
+  // 木纹缓存：仅在尺寸变化时生成一次，避免每次重绘（悬停 / 分析刷新）重新随机导致棋盘闪烁。
+  // 生成放在绘制 effect 内（而非 render），以符合 react-hooks 的 purity 约束。
+  const woodGrainRef = useRef<{ y: number; c1: number; c2: number; width: number }[]>([]);
+  const woodGrainSizeRef = useRef(0);
 
   // Calculate layout metrics
   const padding = canvasSize * 0.05;
@@ -76,7 +82,10 @@ export default function GoBoard({
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        setCanvasSize(Math.min(w, 700));
+        if (w > 0) {
+          setCanvasSize(Math.min(w, 700));
+          setIsSized(true);
+        }
       }
     });
     observer.observe(container);
@@ -102,19 +111,31 @@ export default function GoBoard({
     ctx.fillStyle = BOARD_COLOR;
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    // Subtle wood grain
+    // Subtle wood grain (cached per size, regenerated only when the size changes)
+    if (woodGrainSizeRef.current !== canvasSize || woodGrainRef.current.length === 0) {
+      const segments: { y: number; c1: number; c2: number; width: number }[] = [];
+      for (let i = 0; i < 40; i++) {
+        segments.push({
+          y: Math.random() * canvasSize,
+          c1: (Math.random() - 0.5) * 20,
+          c2: (Math.random() - 0.5) * 20,
+          width: Math.random() * 2 + 0.5,
+        });
+      }
+      woodGrainRef.current = segments;
+      woodGrainSizeRef.current = canvasSize;
+    }
     ctx.save();
     ctx.globalAlpha = 0.04;
-    for (let i = 0; i < 40; i++) {
+    for (const seg of woodGrainRef.current) {
       ctx.strokeStyle = '#8B6914';
-      ctx.lineWidth = Math.random() * 2 + 0.5;
+      ctx.lineWidth = seg.width;
       ctx.beginPath();
-      const y = Math.random() * canvasSize;
-      ctx.moveTo(0, y);
+      ctx.moveTo(0, seg.y);
       ctx.bezierCurveTo(
-        canvasSize * 0.3, y + (Math.random() - 0.5) * 20,
-        canvasSize * 0.7, y + (Math.random() - 0.5) * 20,
-        canvasSize, y
+        canvasSize * 0.3, seg.y + seg.c1,
+        canvasSize * 0.7, seg.y + seg.c2,
+        canvasSize, seg.y
       );
       ctx.stroke();
     }
@@ -210,22 +231,27 @@ export default function GoBoard({
             ctx.stroke();
           }
 
-          // Winrate text
+          // Winrate text: white fill + thin dark outline so it stays legible on
+          // both faint (wood showing through) and saturated candidate circles
           const winrateText = `${(info.winrate * 100).toFixed(1)}%`;
           const scoreText = info.scoreMean !== undefined
             ? `${info.scoreMean > 0 ? '+' : ''}${info.scoreMean.toFixed(1)}`
             : '';
 
-          ctx.fillStyle = 'rgba(255,255,255,0.95)';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
           const fontSize = Math.max(7, stoneRadius * 0.4);
           ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.lineWidth = Math.max(1, fontSize * 0.18);
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillStyle = 'rgba(255,255,255,0.98)';
+          ctx.strokeText(winrateText, x, y - fontSize * 0.4);
           ctx.fillText(winrateText, x, y - fontSize * 0.4);
 
           if (scoreText) {
             ctx.font = `${fontSize * 0.85}px sans-serif`;
+            ctx.strokeText(scoreText, x, y + fontSize * 0.5);
             ctx.fillText(scoreText, x, y + fontSize * 0.5);
           }
         } catch {
@@ -404,15 +430,45 @@ export default function GoBoard({
     onHoverChange?.(null);
   }, [onHoverChange]);
 
+  // 触屏没有 hover：按下时把触点所在的空点作为预览高亮
+  const handleCanvasTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas || !onHoverChange) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvasSize / rect.width;
+      const scaleY = canvasSize / rect.height;
+      const mx = (touch.clientX - rect.left) * scaleX;
+      const my = (touch.clientY - rect.top) * scaleY;
+      const col = Math.round((mx - padding) / cellSize);
+      const row = Math.round((my - padding) / cellSize);
+      if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
+        onHoverChange({ row, col });
+      }
+    },
+    [canvasSize, padding, cellSize, boardSize, onHoverChange]
+  );
+
+  const hoverOccupied = hoverCoord
+    ? board[hoverCoord.row]?.[hoverCoord.col] != null
+    : false;
+
   return (
     <div ref={containerRef} className="w-full max-w-[700px] aspect-square">
       <canvas
         ref={canvasRef}
-        style={{ width: canvasSize, height: canvasSize }}
-        className="rounded-lg shadow-2xl cursor-pointer"
+        style={{
+          width: canvasSize,
+          height: canvasSize,
+          visibility: isSized ? 'visible' : 'hidden',
+        }}
+        className={`rounded-lg shadow-2xl ${hoverOccupied ? 'cursor-not-allowed' : 'cursor-pointer'}`}
         onClick={handleCanvasClick}
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={handleCanvasMouseLeave}
+        onTouchStart={handleCanvasTouchStart}
       />
     </div>
   );

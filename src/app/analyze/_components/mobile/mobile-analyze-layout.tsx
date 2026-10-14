@@ -94,6 +94,10 @@ interface MobileAnalyzeLayoutProps {
   /* Move controls */
   onGoToPrevMove: () => void;
   onGoToNextMove: () => void;
+  onGoFirstMove: () => void;
+  onGoLastMove: () => void;
+  onGoBack5Move: () => void;
+  onGoForward5Move: () => void;
 }
 
 export function MobileAnalyzeLayout({
@@ -156,6 +160,10 @@ export function MobileAnalyzeLayout({
   onLogout,
   onGoToPrevMove,
   onGoToNextMove,
+  onGoFirstMove,
+  onGoLastMove,
+  onGoBack5Move,
+  onGoForward5Move,
 }: MobileAnalyzeLayoutProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const prevIsAnalyzing = useRef(false);
@@ -317,8 +325,15 @@ export function MobileAnalyzeLayout({
         isAnalyzing={isAnalyzing}
         isAutoAnalyze={isAutoAnalyze}
         onToggleAuto={onToggleAuto}
+        currentMoveNumber={currentMoveNumber}
+        onGoFirst={onGoFirstMove}
+        onGoLast={onGoLastMove}
+        onGoBack5={onGoBack5Move}
+        onGoForward5={onGoForward5Move}
         onGoToPrevMove={onGoToPrevMove}
         onGoToNextMove={onGoToNextMove}
+        userDisplayName={userDisplayName}
+        onLogout={onLogout}
       />
     </div>
   );

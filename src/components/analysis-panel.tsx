@@ -18,14 +18,23 @@ interface AnalysisPanelProps {
 }
 
 // Color rules: 1st=blue, 2nd=yellow, 3rd+=green (fading), <20% prior or >15% winrate loss=red
-function getRankColor(idx: number, prior: number, winrateLoss: number): string {
-  if (prior < 0.2 || winrateLoss > 0.15) return '#FF6B6B'; // red
-  if (idx === 0) return '#4A9EFF'; // blue - 1st
-  if (idx === 1) return '#E8B931'; // yellow - 2nd
+interface RankColor {
+  stroke: string;
+  bg: string;
+}
+
+function getRankColor(idx: number, prior: number, winrateLoss: number): RankColor {
+  if (prior < 0.2 || winrateLoss > 0.15) {
+    return { stroke: 'rgb(255,107,107)', bg: 'rgba(255,107,107,0.125)' }; // red
+  }
+  if (idx === 0) return { stroke: 'rgb(74,158,255)', bg: 'rgba(74,158,255,0.125)' }; // blue - 1st
+  if (idx === 1) return { stroke: 'rgb(232,185,49)', bg: 'rgba(232,185,49,0.125)' }; // yellow - 2nd
   // 3rd+ green with fading opacity
-  const greenBase = '#4ADE80';
   const opacity = Math.max(0.3, 1 - (idx - 2) * 0.15);
-  return `${greenBase}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+  return {
+    stroke: `rgba(74,222,128,${opacity})`,
+    bg: `rgba(74,222,128,${opacity * 0.125})`,
+  };
 }
 
 export default function AnalysisPanel({
@@ -47,8 +56,11 @@ export default function AnalysisPanel({
   // Show up to 15 moves
   const topMoves = analysisData.slice(0, 15);
   
-  // Calculate best winrate for winrate loss calculation
-  const bestWinrate = topMoves.length > 0 ? Math.max(...topMoves.map(m => m.winrate ?? 0)) : 0;
+  // Calculate best winrate for winrate loss calculation (guard against missing/NaN winrate)
+  const winrates = topMoves
+    .map((m) => m.winrate)
+    .filter((w): w is number => typeof w === 'number' && Number.isFinite(w));
+  const bestWinrate = winrates.length > 0 ? Math.max(...winrates) : 0;
 
   return (
     <div className="space-y-4">
@@ -60,12 +72,24 @@ export default function AnalysisPanel({
           <span className="text-[#8B8FA3]">胜率</span>
           <span className="text-[#FF6B6B] font-medium">{blackWinrate !== null ? `${Math.round((1 - blackWinrate) * 100)}%` : '--'} 白</span>
         </div>
-        <div className="h-3 bg-[#1A1A2E] rounded-full overflow-hidden relative">
+        <div className="h-3 bg-[#1A1A2E] rounded-full overflow-hidden relative flex">
           {blackWinrate !== null && (
-            <div
-              className="h-full bg-gradient-to-r from-[#4A9EFF] to-[#4A9EFF]/60 transition-all duration-75 ease-out rounded-full"
-              style={{ width: `${blackWinrate * 100}%` }}
-            />
+            <>
+              {/* 黑方固定填充（左） */}
+              <div
+                className={`h-full bg-gradient-to-r from-[#4A9EFF] to-[#3A7EDB] ${
+                  isAnalyzing ? '' : 'transition-all duration-75 ease-out'
+                }`}
+                style={{ width: `${blackWinrate * 100}%` }}
+              />
+              {/* 白方固定填充（右） */}
+              <div
+                className={`h-full bg-gradient-to-r from-[#E8E8E8] to-[#FFFFFF] ${
+                  isAnalyzing ? '' : 'transition-all duration-75 ease-out'
+                }`}
+                style={{ width: `${(1 - blackWinrate) * 100}%` }}
+              />
+            </>
           )}
           {isAnalyzing && (
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse" />
@@ -102,8 +126,9 @@ export default function AnalysisPanel({
             /* Compact two-column cards: rank + coord, then winrate/score/visits */
             <div className="grid grid-cols-2 gap-1.5">
               {topMoves.map((info, idx) => {
-                const winrateLoss = bestWinrate - (info.winrate ?? 0);
-                const color = getRankColor(idx, info.prior ?? 0, winrateLoss);
+                const wr = Number.isFinite(info.winrate) ? info.winrate : bestWinrate;
+                const winrateLoss = bestWinrate - wr;
+                const rank = getRankColor(idx, info.prior ?? 0, winrateLoss);
                 return (
                   <div
                     key={`${info.move}-${idx}`}
@@ -117,9 +142,9 @@ export default function AnalysisPanel({
                       <span
                         className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
                         style={{
-                          backgroundColor: `${color}20`,
-                          color,
-                          border: `1.5px solid ${color}`,
+                          backgroundColor: rank.bg,
+                          color: rank.stroke,
+                          border: `1.5px solid ${rank.stroke}`,
                         }}
                       >
                         {idx + 1}
@@ -129,7 +154,7 @@ export default function AnalysisPanel({
                       </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between font-mono text-[10px] leading-none">
-                      <span style={{ color }}>
+                      <span style={{ color: rank.stroke }}>
                         {info.winrate !== undefined ? `${(info.winrate * 100).toFixed(1)}%` : '--'}
                       </span>
                       <span className="text-[#8B8FA3]">
@@ -160,8 +185,9 @@ export default function AnalysisPanel({
               </div>
               {/* Table rows */}
               {topMoves.map((info, idx) => {
-                const winrateLoss = bestWinrate - (info.winrate ?? 0);
-                const color = getRankColor(idx, info.prior ?? 0, winrateLoss);
+                const wr = Number.isFinite(info.winrate) ? info.winrate : bestWinrate;
+                const winrateLoss = bestWinrate - wr;
+                const rank = getRankColor(idx, info.prior ?? 0, winrateLoss);
                 return (
                   <div
                     key={`${info.move}-${idx}`}
@@ -175,9 +201,9 @@ export default function AnalysisPanel({
                     <span
                       className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                       style={{
-                        backgroundColor: `${color}20`,
-                        color,
-                        border: `1.5px solid ${color}`,
+                        backgroundColor: rank.bg,
+                        color: rank.stroke,
+                        border: `1.5px solid ${rank.stroke}`,
                       }}
                     >
                       {idx + 1}
@@ -189,7 +215,7 @@ export default function AnalysisPanel({
                     </span>
 
                     {/* Winrate */}
-                    <span className="w-12 text-right font-mono" style={{ color }}>
+                    <span className="w-12 text-right font-mono" style={{ color: rank.stroke }}>
                       {info.winrate !== undefined ? `${(info.winrate * 100).toFixed(1)}%` : '--'}
                     </span>
 

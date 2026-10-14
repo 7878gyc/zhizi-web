@@ -41,74 +41,79 @@ export default function BoardControls({
   return (
     <>
       {/* Navigation */}
-      <div className="flex items-center gap-1.5 mt-3">
-        <button
-          onClick={onGoFirst}
-          disabled={!canGoPrev}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="第一手"
-        >
-          <SkipBack className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onGoBack5}
-          disabled={!canGoPrev}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="后退5步"
-        >
-          <Rewind className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onGoPrev}
-          disabled={!canGoPrev}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="上一步"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onGoNext}
-          disabled={!canGoNext}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="下一步"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onGoForward5}
-          disabled={!canGoNext}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="前进5步"
-        >
-          <FastForward className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onGoLast}
-          disabled={!canGoNext}
-          className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
-          title="最后一手"
-        >
-          <SkipForward className="w-4 h-4" />
-        </button>
+      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3">
+        {/* 导航组 */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onGoFirst}
+            disabled={!canGoPrev}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="第一手"
+          >
+            <SkipBack className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onGoBack5}
+            disabled={!canGoPrev}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="后退5步"
+          >
+            <Rewind className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onGoPrev}
+            disabled={!canGoPrev}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="上一步"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onGoNext}
+            disabled={!canGoNext}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="下一步"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onGoForward5}
+            disabled={!canGoNext}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="前进5步"
+          >
+            <FastForward className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onGoLast}
+            disabled={!canGoNext}
+            className="p-1.5 bg-[#16213E] hover:bg-[#2A3A5C] disabled:opacity-30 disabled:hover:bg-[#16213E] text-[#C0C0C0] rounded transition-colors"
+            title="最后一手"
+          >
+            <SkipForward className="w-4 h-4" />
+          </button>
+        </div>
 
-        <span className="text-[#4A4A6A] text-xs mx-1">|</span>
+        <span className="text-[#4A4A6A] text-xs mx-1 hidden sm:inline">|</span>
 
         {/* Board size */}
-        {[9, 13, 19].map((size) => (
-          <button
-            key={size}
-            onClick={() => onSetSize(size)}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              boardSize === size
-                ? 'bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30'
-                : 'bg-[#16213E] text-[#8B8FA3] hover:bg-[#2A3A5C]'
-            }`}
-          >
-            {size}路
-          </button>
-        ))}
+        <div className="flex items-center gap-1.5">
+          {[9, 13, 19].map((size) => (
+            <button
+              key={size}
+              onClick={() => onSetSize(size)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                boardSize === size
+                  ? 'bg-[#E8B931]/20 text-[#E8B931] border border-[#E8B931]/30'
+                  : 'bg-[#16213E] text-[#8B8FA3] hover:bg-[#2A3A5C]'
+              }`}
+            >
+              {size}路
+            </button>
+          ))}
+        </div>
 
-        <span className="text-[#4A4A6A] text-xs mx-1">|</span>
+        <span className="text-[#4A4A6A] text-xs mx-1 hidden sm:inline">|</span>
 
         <button
           onClick={onReset}
@@ -119,7 +124,7 @@ export default function BoardControls({
       </div>
 
       {/* Rules & Komi */}
-      <div className="flex items-center gap-3 mt-2">
+      <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[#4A4A6A]">规则</span>
           {(['chinese', 'japanese', 'aga'] as const).map((r) => (

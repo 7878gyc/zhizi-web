@@ -1,13 +1,27 @@
 'use client';
 
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, FolderOpen, Ellipsis, FastForward, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Plus,
+  FolderOpen,
+  Ellipsis,
+  FastForward,
+  ChevronLeft,
+  ChevronRight,
+  SkipBack,
+  SkipForward,
+  Info,
+  Shield,
+  LogOut,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MobileBottomBarProps {
@@ -22,8 +36,17 @@ interface MobileBottomBarProps {
   isAnalyzing: boolean;
   isAutoAnalyze: boolean;
   onToggleAuto: () => void;
+  /* Move navigation */
+  currentMoveNumber: number;
+  onGoFirst: () => void;
+  onGoLast: () => void;
+  onGoBack5: () => void;
+  onGoForward5: () => void;
   onGoToPrevMove: () => void;
   onGoToNextMove: () => void;
+  /* Account */
+  userDisplayName?: string;
+  onLogout: () => void;
 }
 
 export function MobileBottomBar({
@@ -38,8 +61,15 @@ export function MobileBottomBar({
   isAnalyzing,
   isAutoAnalyze,
   onToggleAuto,
+  currentMoveNumber,
+  onGoFirst,
+  onGoLast,
+  onGoBack5,
+  onGoForward5,
   onGoToPrevMove,
   onGoToNextMove,
+  userDisplayName,
+  onLogout,
 }: MobileBottomBarProps) {
   return (
     <div className="flex items-center justify-between px-2 py-1.5 bg-[#0F0F23] border-t border-[#2A3A5C]/40 shrink-0">
@@ -79,7 +109,14 @@ export function MobileBottomBar({
               <Ellipsis className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-[#1A1A2E] border-[#2A3A5C]/60 min-w-[8rem]">
+          <DropdownMenuContent align="start" className="bg-[#1A1A2E] border-[#2A3A5C]/60 min-w-[9rem]">
+            <DropdownMenuItem onClick={onGoBack5} className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
+              后退 5 步
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onGoForward5} className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
+              前进 5 步
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-[#2A3A5C]/50" />
             <DropdownMenuItem onClick={onSaveSgf} className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
               保存 SGF 到本地
             </DropdownMenuItem>
@@ -95,6 +132,28 @@ export function MobileBottomBar({
             <DropdownMenuItem onClick={onCloudLoad} className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
               从云端打开
             </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-[#2A3A5C]/50" />
+            <DropdownMenuItem asChild className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
+              <Link href="/about" className="flex items-center gap-2">
+                <Info className="h-3.5 w-3.5 text-[#8B8FA3]" />
+                关于
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer">
+              <Link href="/privacy/human" className="flex items-center gap-2">
+                <Shield className="h-3.5 w-3.5 text-[#8B8FA3]" />
+                隐私与服务声明
+              </Link>
+            </DropdownMenuItem>
+            {userDisplayName && (
+              <DropdownMenuItem
+                onClick={onLogout}
+                className="text-xs text-[#FF6B6B] hover:bg-[#FF6B6B]/10 cursor-pointer flex items-center gap-2"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                退出登录
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -116,8 +175,18 @@ export function MobileBottomBar({
         )}
       </div>
 
-      {/* Right group: prev / next */}
+      {/* Right group: first / prev / count / next / last */}
       <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-[#8B8FA3] hover:text-[#E0E0E0] hover:bg-[#1A1A2E]"
+          onClick={onGoFirst}
+          title="第一手"
+        >
+          <SkipBack className="h-5 w-5" />
+        </Button>
+
         <Button
           variant="ghost"
           size="sm"
@@ -128,6 +197,10 @@ export function MobileBottomBar({
           <ChevronLeft className="h-5 w-5" />
         </Button>
 
+        <span className="min-w-[2.25rem] text-center text-[11px] font-mono text-[#8B8FA3]">
+          {currentMoveNumber}
+        </span>
+
         <Button
           variant="ghost"
           size="sm"
@@ -136,6 +209,16 @@ export function MobileBottomBar({
           title="下一步"
         >
           <ChevronRight className="h-5 w-5" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-[#8B8FA3] hover:text-[#E0E0E0] hover:bg-[#1A1A2E]"
+          onClick={onGoLast}
+          title="最后一手"
+        >
+          <SkipForward className="h-5 w-5" />
         </Button>
       </div>
     </div>

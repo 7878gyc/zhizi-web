@@ -755,6 +755,10 @@ export default function AnalyzePage() {
           onLogout={handleLogout}
           onGoToPrevMove={goToPrevMove}
           onGoToNextMove={goToNextMove}
+          onGoFirstMove={goToFirstMove}
+          onGoLastMove={goToLastMove}
+          onGoBack5Move={goBackward5}
+          onGoForward5Move={goForward5}
         />
       </div>
     );
@@ -766,6 +770,8 @@ export default function AnalyzePage() {
         boardSize={boardSize}
         currentPlayer={currentPlayer}
         isConnected={isConnected}
+        isConnecting={isConnecting}
+        analysisMode={analysisMode}
         playerBlack={playerBlack}
         playerWhite={playerWhite}
         userDisplayName={userDisplayName}
@@ -843,20 +849,6 @@ export default function AnalyzePage() {
 
         {/* Right: Analysis panel */}
         <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
-          {/* Mode badge */}
-          <div className="flex items-center justify-between">
-            <span className="text-[#8B8FA3] text-xs uppercase tracking-wider">当前模式</span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded border ${
-                analysisMode === 'remote'
-                  ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
-                  : 'bg-[#E8B931]/15 text-[#E8B931] border-[#E8B931]/30'
-              }`}
-            >
-              {analysisMode === 'remote' ? '远程算力' : '本地分析'}
-            </span>
-          </div>
-
           {analysisMode === 'local' && (
             <AiConfigPanel
               selectedConfig={selectedConfig}
