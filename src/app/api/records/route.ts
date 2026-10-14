@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { extractUserHash, AuthError } from '@/lib/auth-server';
+import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
 import { prisma } from '@/lib/prisma';
 
 /** 获取当前用户的棋谱列表 */
@@ -46,6 +46,11 @@ export async function POST(request: NextRequest) {
 
     if (!fileName || !fileKey || typeof fileSize !== 'number') {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    }
+
+    // 归属校验：fileKey 必须位于当前用户自己的 R2 目录下，防止引用他人文件（IDOR）
+    if (!ownsFileKey(userHash, fileKey)) {
+      return NextResponse.json({ error: '无权引用此文件' }, { status: 403 });
     }
 
     const record = await prisma.record.create({

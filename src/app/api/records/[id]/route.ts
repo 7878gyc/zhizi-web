@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { extractUserHash, AuthError } from '@/lib/auth-server';
+import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
 import { prisma } from '@/lib/prisma';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
 
@@ -58,6 +58,11 @@ export async function DELETE(
     }
     if (record.userHash !== userHash) {
       return NextResponse.json({ error: '无权删除此记录' }, { status: 403 });
+    }
+
+    // 纵深防御：只允许删除位于当前用户目录下的文件，避免伪造 fileKey 删除他人文件
+    if (!ownsFileKey(userHash, record.fileKey)) {
+      return NextResponse.json({ error: '无权删除此文件' }, { status: 403 });
     }
 
     // 删除 R2 文件（幂等：文件不存在也不报错）

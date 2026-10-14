@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { extractUserHash, AuthError } from '@/lib/auth-server';
+import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
 
 function makeRequest(authHeader: string | null): Request {
   const headers = new Headers();
@@ -102,5 +102,26 @@ describe('AuthError', () => {
     expect(err.status).toBe(503);
     expect(err.name).toBe('AuthError');
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe('ownsFileKey', () => {
+  it('accepts a key under the user own directory', () => {
+    expect(ownsFileKey('abc', 'records/abc/1.sgf')).toBe(true);
+  });
+
+  it('rejects a key under another user directory (IDOR)', () => {
+    expect(ownsFileKey('abc', 'records/def/1.sgf')).toBe(false);
+  });
+
+  it('rejects prefix lookalikes', () => {
+    expect(ownsFileKey('abc', 'records/abcdef/1.sgf')).toBe(false);
+    expect(ownsFileKey('abc', 'records/abc')).toBe(false);
+  });
+
+  it('rejects non-string keys', () => {
+    expect(ownsFileKey('abc', undefined)).toBe(false);
+    expect(ownsFileKey('abc', null)).toBe(false);
+    expect(ownsFileKey('abc', 123)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { extractUserHash, AuthError } from '@/lib/auth-server';
+import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
 import { prisma } from '@/lib/prisma';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
 
@@ -22,6 +22,11 @@ export async function GET(
 
     if (!record) {
       return NextResponse.json({ error: '记录不存在' }, { status: 404 });
+    }
+
+    // 纵深防御：fileKey 必须位于当前用户目录下，拒绝历史遗留的越权引用
+    if (!ownsFileKey(userHash, record.fileKey)) {
+      return NextResponse.json({ error: '无权访问此文件' }, { status: 403 });
     }
 
     const command = new GetObjectCommand({

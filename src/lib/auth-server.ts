@@ -49,6 +49,16 @@ export async function extractUserHash(request: Request): Promise<string> {
   return createHash('sha256').update(identifier).digest('hex');
 }
 
+/**
+ * 校验 fileKey 是否位于该用户自己的 R2 目录前缀 `records/{userHash}/` 下。
+ *
+ * 防止客户端伪造 fileKey 造成越权读/删（IDOR）：即使 DB 记录的 userHash 属于本人，
+ * 也要确保 fileKey 指向的是本人目录，否则可引用他人文件。
+ */
+export function ownsFileKey(userHash: string, fileKey: unknown): boolean {
+  return typeof fileKey === 'string' && fileKey.startsWith(`records/${userHash}/`);
+}
+
 export class AuthError extends Error {
   status: number;
   constructor(message: string, status: number) {
