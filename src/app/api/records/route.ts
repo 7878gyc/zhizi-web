@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
+import { AuthError, ownsFileKey } from '@/lib/auth-server';
+import { resolveUserStorageKey } from '@/lib/user-key';
 import { prisma } from '@/lib/prisma';
 
 /** 获取当前用户的棋谱列表 */
 export async function GET(request: NextRequest) {
   try {
-    const userHash = await extractUserHash(request);
+    const userHash = await resolveUserStorageKey(request);
 
     const records = await prisma.record.findMany({
       where: { userHash },
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
 /** 保存棋谱记录到数据库 */
 export async function POST(request: NextRequest) {
   try {
-    const userHash = await extractUserHash(request);
+    const userHash = await resolveUserStorageKey(request);
 
     const body = await request.json();
     const { fileName, fileKey, fileSize, gameInfo } = body as {

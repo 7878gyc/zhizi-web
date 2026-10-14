@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { extractUserHash, AuthError, ownsFileKey } from '@/lib/auth-server';
+import { AuthError, ownsFileKey } from '@/lib/auth-server';
+import { resolveUserStorageKey } from '@/lib/user-key';
 import { prisma } from '@/lib/prisma';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
 
@@ -11,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userHash = await extractUserHash(request);
+    const userHash = await resolveUserStorageKey(request);
     const { id } = await params;
 
     // 先查数据库确认记录属于当前用户

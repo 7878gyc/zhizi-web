@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
-import { extractUserHash, AuthError } from '@/lib/auth-server';
+import { AuthError } from '@/lib/auth-server';
+import { resolveUserStorageKey } from '@/lib/user-key';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
 
 export async function POST(request: NextRequest) {
   try {
-    const userHash = await extractUserHash(request);
+    const userHash = await resolveUserStorageKey(request);
 
     const body = await request.json();
     const { fileName, fileSize, fileKey: providedFileKey } = body as {

@@ -143,7 +143,8 @@ src/
     ├── sgf.ts                    # SGF 生成（含 LZ/注释属性）、坐标转换
     ├── sgf-parser.ts             # SGF 文件解析器（含 LZ 属性解析）
     ├── auth.ts                   # 客户端：用户展示信息缓存 + 会话校验（不再存 token）
-    ├── auth-server.ts            # 服务端认证（extractUserHash + SHA256）
+    ├── auth-server.ts            # 服务端认证：extractIdentifier + 加盐哈希 + fileKey 归属校验
+    ├── user-key.ts               # 用户存储键解析（加盐哈希 + 老用户零丢失兼容）
     ├── prisma.ts                 # PrismaClient 单例
     ├── r2-client.ts              # Cloudflare R2 S3 客户端
     ├── utils.ts                  # 通用工具函数
@@ -151,8 +152,9 @@ src/
         ├── go-types.test.ts      # 坐标转换 / info 解析 / 落子树工具
         ├── sgf.test.ts           # SGF 生成与 LZ 属性
         ├── sgf-parser.test.ts    # SGF 解析（分支 / LZ 分析数据）
-        ├── auth.test.ts          # Token 管理
-        └── auth-server.test.ts   # 服务端认证与哈希
+        ├── auth.test.ts          # 客户端用户缓存
+        ├── auth-server.test.ts   # 服务端认证 / 加盐哈希 / fileKey 归属
+        └── user-key.test.ts      # 存储键解析与老用户兼容
 ```
 
 ## 技术栈
@@ -234,7 +236,9 @@ src/
 └──────────────┘
 ```
 
-**用户标识流程**：前端发送同源请求时由浏览器自动携带 httpOnly Cookie 中的会话 token，后端据此独立完成身份验证和哈希计算。SHA256 运算仅在后端执行，前端不接触用户手机号/邮箱原文，也读不到 token。
+**用户标识流程**：前端发送同源请求时由浏览器自动携带 httpOnly Cookie 中的会话 token，后端据此调用智子 `/account/me` 取回手机号/邮箱，再计算**加盐哈希（HMAC-SHA256）**作为存储键。哈希运算仅在后端执行，前端不接触用户手机号/邮箱原文，也读不到 token。
+
+**老用户兼容（零数据丢失）**：引入盐之前创建的数据以旧的无盐 SHA-256 作为存储路径。`resolveUserStorageKey` 在登录时检测到旧数据会自动沿用旧键，老用户不会因为切换到加盐哈希而看不到自己的棋谱，也无需搬运 R2 文件；新账号则使用加盐键，路径无法被枚举推算。
 
 **文件存储隔离**：每个用户的 SGF 文件存储在独立的 R2 路径 `records/{userHash}/` 下，不同用户的文件通过哈希值天然隔离。
 
@@ -290,6 +294,7 @@ pnpm dev
 | `R2_ACCESS_KEY_ID` | R2 API Access Key ID | 在 R2 桶的 Settings → Manage R2 API Tokens 中创建，创建后立即显示。以 `r2_` 开头 |
 | `R2_SECRET_ACCESS_KEY` | R2 API Secret Access Key | 与 Access Key ID 同时创建，创建后仅显示一次，需立即保存。格式为变长字符串 |
 | `R2_BUCKET_NAME` | R2 存储桶名称 | 创建桶时指定的名称，例如 `zhizi-records` |
+| `USER_HASH_SALT` | 用户标识加盐哈希的盐（HMAC key） | 自行生成的随机字符串，例如 `openssl rand -hex 32`。**必须稳定持久**：一旦更换，已存在的账号将无法定位自己的数据 |
 
 ### 环境变量示例
 
@@ -323,7 +328,7 @@ model Record {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | String (cuid) | 记录主键，自动生成 |
-| `userHash` | String | SHA256(phone/email)，带索引，用于用户隔离 |
+| `userHash` | String | 用户存储键：新账号为加盐哈希（HMAC-SHA256），老数据为旧的无盐 SHA-256；带索引，用于用户隔离 |
 | `fileName` | String | 上传文件原始名称 |
 | `fileKey` | String | R2 文件路径 `records/{userHash}/{uuid}.sgf`，唯一约束 |
 | `fileSize` | Int | 文件大小（字节） |

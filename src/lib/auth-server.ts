@@ -1,14 +1,12 @@
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { ZHIZI_API_BASE, getAuthToken } from '@/lib/zhizi-auth';
 
 /**
  * 从请求的 httpOnly Cookie（或兼容旧 Authorization 头）提取 token，
- * 调用 zhizigo.com 验证用户身份并获取手机号/邮箱，
- * 计算 SHA256 哈希作为 userHash。
- *
- * 哈希计算在后端完成，绝不到前端。
+ * 调用 zhizigo.com /account/me 取回手机号/邮箱标识。
+ * 标识不落库、不返回前端，仅在后端用于计算加盐哈希。
  */
-export async function extractUserHash(request: Request): Promise<string> {
+export async function extractIdentifier(request: Request): Promise<string> {
   const token = getAuthToken(request);
   if (!token) {
     throw new AuthError('Missing authorization token', 401);
@@ -46,6 +44,22 @@ export async function extractUserHash(request: Request): Promise<string> {
     throw new AuthError('无法获取用户标识', 401);
   }
 
+  return identifier;
+}
+
+/**
+ * 加盐哈希（HMAC-SHA256(identifier)）。
+ * 盐由部署环境的 USER_HASH_SALT 提供，必须稳定持久：一旦变更，已存在的加盐账号
+ * 将无法再定位到自己的数据。未配置盐时退回旧的无盐 SHA-256，保证兼容。
+ */
+export function hashIdentifier(identifier: string): string {
+  const salt = process.env.USER_HASH_SALT ?? '';
+  if (!salt) return legacyHashIdentifier(identifier);
+  return createHmac('sha256', salt).update(identifier).digest('hex');
+}
+
+/** 旧的无盐哈希 sha256(identifier)，仅用于老数据兼容判定。 */
+export function legacyHashIdentifier(identifier: string): string {
   return createHash('sha256').update(identifier).digest('hex');
 }
 
