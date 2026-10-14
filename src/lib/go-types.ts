@@ -253,10 +253,9 @@ export function parseInfoLine(line: string): AnalysisInfo[] {
     const block = trimmed.slice('info '.length);
     const info = parseInfoBlock(block);
     if (info.move) {
-      const result = info as AnalysisInfo;
-      result.winrate = result.winrate > 1 ? result.winrate / 10000 : result.winrate;
-      result.prior = result.prior > 1 ? result.prior / 10000 : result.prior;
-      candidates.push(result);
+      // 官方契约：kata-analyze 的 winrate / prior 均为 [0,1] 的小数，直接采用。
+      // 不做百分比（>1）归一化，避免把 55 这类值误算成 0.0055。
+      candidates.push(info as AnalysisInfo);
     }
   }
   return candidates;

@@ -122,11 +122,12 @@ describe('parseInfoLine', () => {
     });
   });
 
-  it('normalizes percent-style winrate/prior (>/10000)', () => {
-    const line = 'info move D4 winrate 6100 visits 100 prior 2500 order 0';
+  it('keeps winrate/prior as [0,1] fractions without rescaling', () => {
+    // 官方契约：kata-analyze 输出的小数直接采用，不做百分比/万分比归一化
+    const line = 'info move D4 winrate 0.52 visits 100 prior 0.3 order 0';
     const [info] = parseInfoLine(line);
-    expect(info.winrate).toBe(0.61);
-    expect(info.prior).toBe(0.25);
+    expect(info.winrate).toBe(0.52);
+    expect(info.prior).toBe(0.3);
   });
 
   it('parses multiple concatenated info blocks', () => {

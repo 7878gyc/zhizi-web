@@ -9,7 +9,9 @@ import { AUTH_COOKIE } from '@/lib/zhizi-auth';
 const GITHUB_URL = 'https://github.com/7878gyc/zhizi-web';
 
 export const metadata: Metadata = {
-  title: '在线围棋 AI 复盘工具 | 智子围棋 Web',
+  // 用 absolute 绕过 layout 的 title.template：根页面与根 layout 同属一个 segment，
+  // 不会套用模板，若只写主体标题会丢掉品牌后缀。
+  title: { absolute: '在线围棋 AI 复盘工具 | 智子围棋 Web' },
   description:
     '第三方开源围棋 AI 复盘工具，接入智子官方 KataGo 算力。实时胜率曲线、鹰眼问题手诊断、AI 推荐选点与变化图，支持 SGF 导入导出与云棋谱库。',
   alternates: {
@@ -120,7 +122,7 @@ export default async function HomePage() {
               alt="围棋 AI 分析界面：棋盘、胜率曲线与候选选点"
               width={900}
               height={620}
-              priority
+              preload
               className="w-full h-auto rounded-2xl border border-[#2A3A5C]/40"
             />
           </div>

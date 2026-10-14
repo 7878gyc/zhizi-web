@@ -1,10 +1,12 @@
 import { ImageResponse } from 'next/og';
+import { loadCjkFonts } from '@/lib/og-font';
 
-export const alt = 'Zhizi Go Web — AI Go Review';
-export const size = { width: 1200, height: 630 };
+export const alt = '智子围棋 Web — 在线围棋 AI 复盘工具';
+export const size = { width: 1080, height: 1080 };
 export const contentType = 'image/png';
 
-export default function TwitterImage() {
+export default async function TwitterImage() {
+  const fonts = await loadCjkFonts();
   return new ImageResponse(
     (
       <div
@@ -14,23 +16,19 @@ export default function TwitterImage() {
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          padding: '80px',
+          padding: '96px',
           background: '#0F0F23',
           color: '#E0E0E0',
-          fontFamily: 'sans-serif',
+          fontFamily: 'Noto Sans SC, sans-serif',
         }}
       >
-        <div style={{ fontSize: 72, fontWeight: 700, color: '#E8B931' }}>
-          Zhizi Go · AI Review
-        </div>
-        <div style={{ marginTop: 24, fontSize: 38, color: '#8B8FA3' }}>
-          Real-time KataGo analysis for Go players
-        </div>
-        <div style={{ marginTop: 48, fontSize: 28, color: '#4A4A6A' }}>
-          Winrate · Hawk-eye · SGF · Cloud library
+        <div style={{ fontSize: 88, fontWeight: 700, color: '#E8B931' }}>智子围棋 Web</div>
+        <div style={{ marginTop: 32, fontSize: 52, color: '#8B8FA3' }}>在线围棋 AI 复盘工具</div>
+        <div style={{ marginTop: 56, fontSize: 34, color: '#4A4A6A' }}>
+          实时胜率 · 鹰眼诊断 · SGF · 云棋谱库
         </div>
       </div>
     ),
-    { ...size },
+    { ...size, fonts: fonts.length > 0 ? fonts : undefined },
   );
 }

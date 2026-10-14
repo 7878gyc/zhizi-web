@@ -19,13 +19,12 @@ export const metadata: Metadata = {
     siteName: '智子围棋 Web',
     locale: 'zh_CN',
     url: 'https://zhizi.110708.xyz',
-    title: '智子围棋 Web | 在线围棋 AI 复盘工具',
+    // title 不写死，交给各页面的 title 继承，避免对所有页面恒定
     description:
       '第三方开源围棋 AI 复盘工具，接入智子官方 KataGo 算力，实时胜率、鹰眼诊断、推荐选点与变化图。',
   },
   twitter: {
     card: 'summary_large_image',
-    title: '智子围棋 Web | 在线围棋 AI 复盘工具',
     description:
       '第三方开源围棋 AI 复盘工具，接入智子官方 KataGo 算力，实时胜率、鹰眼诊断、推荐选点与变化图。',
   },
