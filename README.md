@@ -2,6 +2,8 @@
 
 基于 Next.js 16 + React 19 + TypeScript 5 的围棋 AI 分析 Web 应用。集成智子围棋（Zhizi Go）GPU 算力平台，通过 Socket.IO 协议连接 KataGo 引擎，提供实时对局分析。
 
+> **在线 Demo**：[https://zhizi.110708.xyz](https://zhizi.110708.xyz)
+
 ## 核心功能
 
 - **登录认证**：手机号/邮箱 + 密码登录、验证码登录/注册、找回密码，通过后端代理转发 `zhizigo.com` API；会话 token 存 httpOnly Cookie
