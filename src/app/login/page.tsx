@@ -41,6 +41,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -137,7 +138,17 @@ export default function LoginPage() {
         return;
       }
 
-      // 密码登录 / 验证码登录 / 找回密码成功后，会话 token 已由后端写入 Cookie
+      // 密码登录 / 验证码登录 / 找回密码成功后，会话 token 已由后端写入 Cookie。
+      // 老用户此时可能还有旧的无盐哈希数据，主动触发一次迁移（后端会拷贝 R2 并更新 DB）。
+      setMigrating(true);
+      try {
+        await fetch('/api/auth/migrate', { method: 'POST' });
+      } catch {
+        // 迁移失败不阻塞登录：后端会沿用旧键，下次登录继续重试
+      } finally {
+        setMigrating(false);
+      }
+
       if (data && typeof data === 'object') saveUser(data as Record<string, unknown>);
       router.push('/analyze');
     } catch (err: unknown) {
@@ -369,6 +380,12 @@ export default function LoginPage() {
               </div>
             )}
 
+            {migrating && (
+              <div className="bg-[#E8B931]/10 border border-[#E8B931]/30 rounded-md px-3 py-2 text-[#E8B931] text-xs">
+                检测到历史数据，正在迁移到新的安全存储，请稍候…
+              </div>
+            )}
+
             <Button
               onClick={handleSubmit}
               disabled={loading}
@@ -377,7 +394,7 @@ export default function LoginPage() {
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-[#1A1A2E]/30 border-t-[#1A1A2E] rounded-full animate-spin" />
-                  处理中...
+                  {migrating ? '正在更新历史数据…' : '处理中...'}
                 </span>
               ) : (
                 submitLabel

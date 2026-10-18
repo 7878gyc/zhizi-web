@@ -146,7 +146,7 @@ src/
     ├── sgf-parser.ts             # SGF 文件解析器（含 LZ 属性解析）
     ├── auth.ts                   # 客户端：用户展示信息缓存 + 会话校验（不再存 token）
     ├── auth-server.ts            # 服务端认证：extractIdentifier + 加盐哈希 + fileKey 归属校验
-    ├── user-key.ts               # 用户存储键解析（加盐哈希 + 老用户零丢失兼容）
+    ├── user-key.ts               # 用户存储键解析（加盐哈希 + 老数据自动迁移）
     ├── prisma.ts                 # PrismaClient 单例
     ├── r2-client.ts              # Cloudflare R2 S3 客户端
     ├── utils.ts                  # 通用工具函数
@@ -156,7 +156,7 @@ src/
         ├── sgf-parser.test.ts    # SGF 解析（分支 / LZ 分析数据）
         ├── auth.test.ts          # 客户端用户缓存
         ├── auth-server.test.ts   # 服务端认证 / 加盐哈希 / fileKey 归属
-        └── user-key.test.ts      # 存储键解析与老用户兼容
+        └── user-key.test.ts      # 存储键解析与老数据迁移
 ```
 
 ## 技术栈
@@ -186,6 +186,7 @@ src/
 | `/api/auth/fast-login` | POST | 验证码快速登录 |
 | `/api/auth/me` | GET | 获取当前用户信息 |
 | `/api/auth/logout` | POST | 登出（清除 httpOnly Cookie） |
+| `/api/auth/migrate` | POST | 老用户数据迁移（旧无盐哈希 → 加盐哈希，含 R2 对象搬迁） |
 | `/api/auth/fetch-socketio-token` | POST | 获取 KataGo 引擎连接令牌 |
 | `/api/cluster/account/register` | POST | 注册（需先 send-code type=register） |
 | `/api/cluster/account/reset-password` | POST | 重置密码（成功后写入新会话 Cookie） |
@@ -240,7 +241,7 @@ src/
 
 **用户标识流程**：前端发送同源请求时由浏览器自动携带 httpOnly Cookie 中的会话 token，后端据此调用智子 `/account/me` 取回手机号/邮箱，再计算**加盐哈希（HMAC-SHA256）**作为存储键。哈希运算仅在后端执行，前端不接触用户手机号/邮箱原文，也读不到 token。
 
-**老用户兼容（零数据丢失）**：引入盐之前创建的数据以旧的无盐 SHA-256 作为存储路径。`resolveUserStorageKey` 在登录时检测到旧数据会自动沿用旧键，老用户不会因为切换到加盐哈希而看不到自己的棋谱，也无需搬运 R2 文件；新账号则使用加盐键，路径无法被枚举推算。
+**老用户迁移（零数据丢失）**：引入盐之前创建的数据以旧的无盐 SHA-256 作为存储路径。老用户登录后会自动触发迁移（`POST /api/auth/migrate`，登录页会提示“正在迁移历史数据”）：把 `records/{旧键}/` 下的对象逐个**拷贝到 `records/{加盐键}/` → 更新数据库记录 → 删除旧对象**，完成后统一使用加盐键。迁移是幂等的，中途失败会临时沿用旧键并在下次登录重试；`fileKey` 不在本人旧目录下的异常记录会被跳过。新账号则直接使用加盐键，路径无法被枚举推算。
 
 **文件存储隔离**：每个用户的 SGF 文件存储在独立的 R2 路径 `records/{userHash}/` 下，不同用户的文件通过哈希值天然隔离。
 

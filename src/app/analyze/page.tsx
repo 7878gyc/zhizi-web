@@ -84,6 +84,8 @@ export default function AnalyzePage() {
       const info = { phone: user.phone, email: user.email, username: user.username || user.nickname };
       setUserInfo(info as { phone?: string; email?: string; username?: string });
       saveUser(info);
+      // 老用户数据迁移（幂等）：确保已有的旧无盐数据尽快迁到加盐路径
+      fetch('/api/auth/migrate', { method: 'POST' }).catch(() => {});
     });
     return () => {
       active = false;
