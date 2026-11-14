@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next';
+import { SITE_URL } from '@/lib/site';
 
-const BASE = 'https://zhizi.110708.xyz';
+const BASE = SITE_URL;
 
 // 构建时间由 next.config.ts 的 env.BUILD_TIME 在构建时注入（回退到启动时刻）
 const BUILD_TIME = new Date(process.env.BUILD_TIME ?? Date.now());

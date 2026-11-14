@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { sgfToGtpCoord, generateSGF, generatePureSGF, generateAnalyzedSGF } from '@/lib/sgf';
 import type { MoveNode, AnalysisInfo } from '@/lib/go-types';
+import { parseSgfContent } from '@/lib/sgf-parser';
 
 describe('sgfToGtpCoord', () => {
   it('converts lowercase SGF coords to GTP', () => {
@@ -85,7 +86,7 @@ describe('generateSGF', () => {
     expect(bIdx).toBeLessThan(wIdx);
   });
 
-  it('skips non-main-branch children', () => {
+  it('exports variation branches instead of dropping them', () => {
     const root: MoveNode = {
       id: 'root',
       move: 'root',
@@ -109,7 +110,7 @@ describe('generateSGF', () => {
     const sgf = generateSGF({ boardSize: 19, komi: 7.5, rules: 'chinese', moveTree: root });
     expect(sgf).toContain(';B[pd]');
     expect(sgf).toContain(';W[dp]');
-    expect(sgf).not.toContain(';W[cq]');
+    expect(sgf).toContain(';W[cc]');
   });
 
   it('escapes player names and comment text', () => {
@@ -151,7 +152,7 @@ describe('generateAnalyzedSGF', () => {
   ];
 
   it('includes LZ and C properties when analysis is available', () => {
-    const analysisCache = new Map([[1, { data: candidates, winrate: 0.61 }]]);
+    const analysisCache = new Map([['n1', { data: candidates, winrate: 0.61 }]]);
     const sgf = generateSGF({
       boardSize: 19,
       komi: 7.5,
@@ -168,7 +169,7 @@ describe('generateAnalyzedSGF', () => {
   });
 
   it('omits analysis when includeAnalysis is false', () => {
-    const analysisCache = new Map([[1, { data: candidates, winrate: 0.61 }]]);
+    const analysisCache = new Map([['n1', { data: candidates, winrate: 0.61 }]]);
     const sgf = generateSGF({
       boardSize: 19,
       komi: 7.5,
@@ -182,7 +183,7 @@ describe('generateAnalyzedSGF', () => {
   });
 
   it('generatePureSGF never includes analysis', () => {
-    const analysisCache = new Map([[1, { data: candidates, winrate: 0.61 }]]);
+    const analysisCache = new Map([['n1', { data: candidates, winrate: 0.61 }]]);
     const sgf = generatePureSGF({
       boardSize: 19,
       komi: 7.5,
@@ -194,7 +195,7 @@ describe('generateAnalyzedSGF', () => {
   });
 
   it('generateAnalyzedSGF includes analysis', () => {
-    const analysisCache = new Map([[1, { data: candidates, winrate: 0.61 }]]);
+    const analysisCache = new Map([['n1', { data: candidates, winrate: 0.61 }]]);
     const sgf = generateAnalyzedSGF({
       boardSize: 19,
       komi: 7.5,
@@ -215,7 +216,7 @@ describe('generateAnalyzedSGF', () => {
       prior: 0.1,
       order: 0,
     };
-    const analysisCache = new Map([[1, { data: [c1], winrate: 0.5 }]]);
+    const analysisCache = new Map([['n1', { data: [c1], winrate: 0.5 }]]);
     const sgf = generateSGF({
       boardSize: 19,
       komi: 7.5,
@@ -225,5 +226,59 @@ describe('generateAnalyzedSGF', () => {
       includeAnalysis: true,
     });
     expect(sgf).toContain('KataGo 50 1.5m');
+  });
+
+  it('preserves komi precision', () => {
+    const sgf = generateSGF({ boardSize: 19, komi: 6.75, rules: 'chinese', moveTree: buildTree([]) });
+    expect(sgf).toContain('KM[6.75]');
+  });
+
+  it('writes root handicap stones as AB/AW', () => {
+    const root: MoveNode = {
+      id: 'root',
+      move: 'root',
+      color: null,
+      children: [],
+      parentId: null,
+      moveNumber: 0,
+      handicapStones: [
+        { move: 'D16', color: 'black' },
+        { move: 'Q4', color: 'white' },
+      ],
+    };
+    const sgf = generateSGF({ boardSize: 19, komi: 7.5, rules: 'chinese', moveTree: root });
+    expect(sgf).toContain('AB[dd]');
+    expect(sgf).toContain('AW[pp]');
+  });
+
+  it('round-trips variations and handicap through the parser', () => {
+    const root: MoveNode = {
+      id: 'root',
+      move: 'root',
+      color: null,
+      children: [
+        {
+          id: 'n1',
+          move: 'Q16',
+          color: 'black',
+          children: [
+            { id: 'n2', move: 'D4', color: 'white', children: [], parentId: 'n1', moveNumber: 2 },
+            { id: 'n3', move: 'C17', color: 'white', children: [], parentId: 'n1', moveNumber: 2 },
+          ],
+          parentId: 'root',
+          moveNumber: 1,
+        },
+      ],
+      parentId: null,
+      moveNumber: 0,
+      handicapStones: [{ move: 'D16', color: 'black' }],
+    };
+    const sgf = generateSGF({ boardSize: 19, komi: 7.5, rules: 'chinese', moveTree: root });
+    const parsed = parseSgfContent(sgf);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.tree.handicapStones).toEqual([{ move: 'D16', color: 'black' }]);
+    const n1 = parsed!.tree.children[0];
+    expect(n1.move).toBe('Q16');
+    expect(n1.children.map(c => c.move)).toEqual(['D4', 'C17']);
   });
 });

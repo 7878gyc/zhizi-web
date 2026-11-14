@@ -178,6 +178,31 @@ describe('useGoGame', () => {
     expect(result.current.currentPlayer).toBe('black');
   });
 
+  it('replays an imported tree with the new board size in the same handler', () => {
+    const nineByNine: MoveNode = {
+      id: 'root',
+      move: 'root',
+      color: null,
+      children: [
+        { id: 'a', move: 'E5', color: 'black', children: [], parentId: 'root', moveNumber: 1 },
+      ],
+      parentId: null,
+      moveNumber: 0,
+    };
+    const { result } = renderHook(() => useGoGame(19));
+    act(() => {
+      // 模拟 SGF 导入：setBoardSize 与 loadFromTree 发生在同一个事件里
+      result.current.setBoardSize(9);
+      result.current.loadFromTree(nineByNine, undefined, 9);
+    });
+
+    expect(result.current.boardSize).toBe(9);
+    expect(result.current.board).toHaveLength(9);
+    expect(result.current.board[4][4]).toBe('black');
+    expect(result.current.lastMove).toEqual({ row: 4, col: 4 });
+    expect(result.current.gtpMoves).toEqual(['B E5']);
+  });
+
   it('records winrates on the current node (black perspective)', () => {
     const { result } = renderHook(() => useGoGame(19));
     play(result, 3, 15); // B Q16 — current node is black

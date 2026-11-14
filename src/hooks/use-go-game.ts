@@ -27,7 +27,7 @@ interface UseGoGameReturn {
   setBoardSize: (size: number) => void;
   setKomi: (komi: number) => void;
   setRules: (rules: string) => void;
-  loadFromTree: (tree: MoveNode, targetNodeId?: string) => void;
+  loadFromTree: (tree: MoveNode, targetNodeId?: string, boardSizeOverride?: number) => void;
   setCurrentWinrate: (winrate: number) => void;
 }
 
@@ -170,12 +170,16 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
 
   /** Navigate to a node and update the board */
   const navigateToNode = useCallback(
-    (nodeId: string, tree?: MoveNode) => {
+    (nodeId: string, tree?: MoveNode, sizeOverride?: number) => {
       const targetTree = tree ?? moveTree;
       const path = getPathToNode(targetTree, nodeId);
       if (path.length === 0) return;
 
-      const { board: newBoard, nextPlayer } = replayBoardFromPath(path, boardSize);
+      // Importing an SGF of another board size calls setBoardSize + loadFromTree
+      // in the same handler. State hasn't re-rendered yet, so replay must use the
+      // explicit size instead of the stale boardSize closure value.
+      const size = sizeOverride ?? boardSize;
+      const { board: newBoard, nextPlayer } = replayBoardFromPath(path, size);
 
       setBoard(newBoard);
       setCurrentPlayer(nextPlayer);
@@ -184,7 +188,7 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
       // Update lastMove
       const lastNode = path[path.length - 1];
       if (lastNode.move !== 'root' && lastNode.color) {
-        const { row, col } = gtpToCoord(lastNode.move, boardSize);
+        const { row, col } = gtpToCoord(lastNode.move, size);
         setLastMove({ row, col });
       } else {
         setLastMove(null);
@@ -356,7 +360,7 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
   }, []);
 
   const loadFromTree = useCallback(
-    (tree: MoveNode, targetNodeId?: string) => {
+    (tree: MoveNode, targetNodeId?: string, sizeOverride?: number) => {
       const cloned = cloneTree(tree);
       setMoveTree(cloned);
       const target = targetNodeId ?? (() => {
@@ -367,7 +371,7 @@ export function useGoGame(initialSize: number = 19): UseGoGameReturn {
         }
         return node.id;
       })();
-      navigateToNode(target, cloned);
+      navigateToNode(target, cloned, sizeOverride);
     },
     [navigateToNode]
   );

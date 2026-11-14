@@ -108,6 +108,12 @@ describe('hashIdentifier', () => {
     );
   });
 
+  it('fails closed in production when no salt is configured', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('USER_HASH_SALT', '');
+    expect(() => hashIdentifier('13800000000')).toThrow('USER_HASH_SALT');
+  });
+
   it('produces a salted HMAC hash that differs from the legacy hash', () => {
     vi.stubEnv('USER_HASH_SALT', 'unit-test-salt');
     const salted = hashIdentifier('13800000000');

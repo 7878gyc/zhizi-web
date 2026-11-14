@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import { Inspector } from 'react-dev-inspector';
+import { SITE_URL } from '@/lib/site';
 import './globals.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://zhizi.110708.xyz'),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: '智子围棋 Web | 在线围棋 AI 复盘工具',
     template: '%s | 智子围棋 Web',
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: '智子围棋 Web',
     locale: 'zh_CN',
-    url: 'https://zhizi.110708.xyz',
+    url: SITE_URL,
     // title 不写死，交给各页面的 title 继承，避免对所有页面恒定
     description:
       '第三方开源围棋 AI 复盘工具，接入智子官方 KataGo 算力，实时胜率、鹰眼诊断、推荐选点与变化图。',
@@ -35,12 +35,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-
   return (
     <html lang="zh-CN">
       <body className={`antialiased`}>
-        {isDev && <Inspector />}
         {children}
       </body>
     </html>

@@ -418,17 +418,21 @@ export default function GoBoard({
       const row = Math.round((my - padding) / cellSize);
 
       if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
-        onHoverChange({ row, col });
-      } else {
+        // 同一格的 mousemove 非常密集；不比较就直接 set 会让整页和 Canvas
+        // 以鼠标事件频率重绘。
+        if (hoverCoord?.row !== row || hoverCoord?.col !== col) {
+          onHoverChange({ row, col });
+        }
+      } else if (hoverCoord) {
         onHoverChange(null);
       }
     },
-    [canvasSize, padding, cellSize, boardSize, onHoverChange]
+    [canvasSize, padding, cellSize, boardSize, onHoverChange, hoverCoord]
   );
 
   const handleCanvasMouseLeave = useCallback(() => {
-    onHoverChange?.(null);
-  }, [onHoverChange]);
+    if (hoverCoord) onHoverChange?.(null);
+  }, [onHoverChange, hoverCoord]);
 
   // 触屏没有 hover：按下时把触点所在的空点作为预览高亮
   const handleCanvasTouchStart = useCallback(
@@ -445,10 +449,12 @@ export default function GoBoard({
       const col = Math.round((mx - padding) / cellSize);
       const row = Math.round((my - padding) / cellSize);
       if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
-        onHoverChange({ row, col });
+        if (hoverCoord?.row !== row || hoverCoord?.col !== col) {
+          onHoverChange({ row, col });
+        }
       }
     },
-    [canvasSize, padding, cellSize, boardSize, onHoverChange]
+    [canvasSize, padding, cellSize, boardSize, onHoverChange, hoverCoord]
   );
 
   const hoverOccupied = hoverCoord

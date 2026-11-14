@@ -11,7 +11,6 @@ interface AiConfigPanelProps {
   onSelectConfig: (config: AiConfig) => void;
   isConnected: boolean;
   isConnecting: boolean;
-  isAnalyzing: boolean;
   onStartAnalysis: () => void;
   onStopAnalysis: () => void;
   isAutoAnalyzing: boolean;
@@ -24,7 +23,6 @@ export default function AiConfigPanel({
   onSelectConfig,
   isConnected,
   isConnecting,
-  isAnalyzing,
   onStartAnalysis,
   onStopAnalysis,
   isAutoAnalyzing,

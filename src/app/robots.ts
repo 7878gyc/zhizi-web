@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next';
+import { SITE_URL } from '@/lib/site';
 
-const BASE = 'https://zhizi.110708.xyz';
+const BASE = SITE_URL;
 
 export default function robots(): MetadataRoute.Robots {
   return {

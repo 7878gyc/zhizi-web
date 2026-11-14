@@ -21,7 +21,12 @@ interface MigrateResult {
   ok: boolean;
 }
 
-/** 把某个旧键下的记录逐条迁移到加盐键（拷贝 → 更新 DB → 删除旧对象）。 */
+/**
+ * 把某个旧键下的记录迁移到加盐键。
+ *
+ * 两阶段：先把所有对象拷贝到新前缀，再用一个事务批量更新 DB，最后删除旧对象。
+ * 这样不会出现「部分记录已改到新键、部分仍在旧键」的中间态导致用户暂时看不到数据。
+ */
 async function migrateLegacyRecords(legacy: string, salted: string): Promise<MigrateResult> {
   const records = await prisma.record.findMany({
     where: { userHash: legacy },
@@ -30,8 +35,21 @@ async function migrateLegacyRecords(legacy: string, salted: string): Promise<Mig
 
   const legacyPrefix = `records/${legacy}/`;
   const saltedPrefix = `records/${salted}/`;
-  let migrated = 0;
+  const copied: { id: string; oldKey: string; newKey: string }[] = [];
 
+  const cleanupCopies = async () => {
+    for (const item of copied) {
+      try {
+        await s3Client.send(
+          new DeleteObjectCommand({ Bucket: r2Bucket, Key: item.newKey }),
+        );
+      } catch (e) {
+        console.error('[user-key] cleanup copied object failed (non-fatal):', item.id, e);
+      }
+    }
+  };
+
+  // 阶段 1：拷贝。任一失败就回滚已拷贝对象，全部保留旧键。
   for (const record of records) {
     // 只迁移 fileKey 确实位于旧目录下的记录；异常/历史越权引用一律跳过
     if (!ownsFileKey(legacy, record.fileKey)) {
@@ -41,7 +59,6 @@ async function migrateLegacyRecords(legacy: string, salted: string): Promise<Mig
 
     const newKey = `${saltedPrefix}${record.fileKey.slice(legacyPrefix.length)}`;
     try {
-      // 1) 拷贝到新前缀（保留原 metadata / content-type）
       await s3Client.send(
         new CopyObjectCommand({
           Bucket: r2Bucket,
@@ -50,28 +67,44 @@ async function migrateLegacyRecords(legacy: string, salted: string): Promise<Mig
           MetadataDirective: 'COPY',
         }),
       );
-      // 2) 更新数据库归属与路径
-      await prisma.record.update({
-        where: { id: record.id },
-        data: { userHash: salted, fileKey: newKey },
-      });
-      migrated += 1;
-      // 3) 删除旧对象（尽力而为；失败也不影响正确性）
-      try {
-        await s3Client.send(
-          new DeleteObjectCommand({ Bucket: r2Bucket, Key: record.fileKey }),
-        );
-      } catch (e) {
-        console.error('[user-key] delete old object failed (non-fatal):', record.id, e);
-      }
+      copied.push({ id: record.id, oldKey: record.fileKey, newKey });
     } catch (e) {
-      // 拷贝或 DB 更新失败：保留旧数据，整体回退到旧键，下次登录重试
       console.error('[user-key] migrate record failed:', record.id, e);
-      return { migrated, ok: false };
+      await cleanupCopies();
+      return { migrated: 0, ok: false };
     }
   }
 
-  return { migrated, ok: true };
+  if (copied.length === 0) return { migrated: 0, ok: true };
+
+  // 阶段 2：DB 事务。失败则回滚拷贝，仍使用旧键。
+  try {
+    await prisma.$transaction(
+      copied.map((item) =>
+        prisma.record.update({
+          where: { id: item.id },
+          data: { userHash: salted, fileKey: item.newKey },
+        }),
+      ),
+    );
+  } catch (e) {
+    console.error('[user-key] migrate transaction failed:', e);
+    await cleanupCopies();
+    return { migrated: 0, ok: false };
+  }
+
+  // 阶段 3：删除旧对象（尽力而为；失败也不影响正确性）
+  for (const item of copied) {
+    try {
+      await s3Client.send(
+        new DeleteObjectCommand({ Bucket: r2Bucket, Key: item.oldKey }),
+      );
+    } catch (e) {
+      console.error('[user-key] delete old object failed (non-fatal):', item.id, e);
+    }
+  }
+
+  return { migrated: copied.length, ok: true };
 }
 
 async function resolve(identifier: string): Promise<{ key: string; migrated: number }> {

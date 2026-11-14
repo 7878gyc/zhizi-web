@@ -76,7 +76,6 @@ prisma/
 └── schema.prisma                            # Prisma 数据模型（Record）
 vitest.config.ts                             # Vitest 测试配置（jsdom + @/ 别名）
 vitest.setup.ts                              # Vitest 测试初始化（jest-dom 断言）
-src/server.ts                                # 自定义 Next.js HTTP 服务器（端口 5000）
 src/
 ├── app/
 │   ├── api/auth/
@@ -114,7 +113,7 @@ src/
 │   │   │       ├── mobile-analyze-layout.tsx    # 移动端布局容器
 │   │   │       ├── mobile-top-bar.tsx           # 顶部操作栏
 │   │   │       ├── mobile-bottom-bar.tsx        # 底部操作栏
-│   │   │       ├── mobile-menu-sheet.tsx        # Tab 分析面板（常驻挂载）
+│   │   │       ├── mobile-menu-sheet.tsx        # Tab 分析面板（数据来自共享缓存）
 │   │   │       ├── mobile-player-badges.tsx     # 棋手徽章
 │   │   │       └── mobile-game-info-tab.tsx     # 棋局信息 Tab
 │   │   └── _hooks/
@@ -297,7 +296,8 @@ pnpm dev
 | `R2_ACCESS_KEY_ID` | R2 API Access Key ID | 在 R2 桶的 Settings → Manage R2 API Tokens 中创建，创建后立即显示。以 `r2_` 开头 |
 | `R2_SECRET_ACCESS_KEY` | R2 API Secret Access Key | 与 Access Key ID 同时创建，创建后仅显示一次，需立即保存。格式为变长字符串 |
 | `R2_BUCKET_NAME` | R2 存储桶名称 | 创建桶时指定的名称，例如 `zhizi-records` |
-| `USER_HASH_SALT` | 用户标识加盐哈希的盐（HMAC key） | 自行生成的随机字符串，例如 `openssl rand -hex 32`。**必须稳定持久**：一旦更换，已存在的账号将无法定位自己的数据 |
+| `USER_HASH_SALT` | 用户标识加盐哈希的盐（HMAC key） | 自行生成的随机字符串，例如 `openssl rand -hex 32`。**生产环境必填**（缺失会直接报错，避免退化为无盐哈希）；**必须稳定持久**：一旦更换，已存在的账号将无法定位自己的数据 |
+| `NEXT_PUBLIC_SITE_URL` | 站点对外 URL（metadata / sitemap / robots） | 例如 `https://zhizi.example.com`；自部署时改成自己的域名 |
 
 ### 环境变量示例
 
@@ -345,7 +345,7 @@ model Record {
 1. 通过 `/api/auth/fetch-socketio-token` 获取连接令牌和 URL（每次连接/重连都取新令牌，不复用旧令牌）
 2. 使用 Socket.IO 连接 KataGo 引擎（`/socket.io.v4` 路径）
 3. `stdout` 事件按流缓冲，仅在收到完整 `\n` 行时解析；一次事件可能是半行，也可能是 `{ data: binary }` 二进制块
-4. GTP 命令串行、不流水线：给每条命令加数字 ID，收到 `= <id>` 成功响应后再发下一条。同步顺序固定为 `boardsize` → `kata-set-rules` → `komi` → `clear_board` → 让子 → `play...` → `kata-analyze B/W 50`
+4. GTP 命令串行、不流水线：给每条命令加数字 ID，收到 `= <id>` 成功响应后再发下一条。同步前先 `stop` 旧分析，顺序固定为 `boardsize` → `kata-set-rules` → `komi` → `clear_board` → 让子 → `play...` → `kata-analyze B/W 50`
 5. 引擎通过 `stdout` 持续返回 `info` 行，解析胜率、选点、PV 等信息（50cs = 0.5s 间隔）
 6. 断开前先发送 `stop`；重连时丢弃旧 GTP、取新令牌、等 `ready` 后整盘重放再 `kata-analyze`
 7. 胜率统一转换为黑方视角存储和展示

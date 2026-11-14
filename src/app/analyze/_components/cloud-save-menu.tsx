@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Trash2, Cloud, Download } from 'lucide-react';
 
 interface CloudRecord {

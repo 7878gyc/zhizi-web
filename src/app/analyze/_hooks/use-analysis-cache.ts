@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import type { AnalysisInfo } from '@/lib/go-types';
 
 interface CacheEntry {
@@ -8,39 +8,44 @@ interface CacheEntry {
   winrate: number | null;
 }
 
+/**
+ * 按局面（MoveNode.id）缓存实时分析，而不是按手数。
+ *
+ * 同一手数可能对应不同分支；按手数缓存会让分支互相覆盖，也会在跳转时
+ * 把上一个局面的数据写到新局面的键下。
+ */
 export function useAnalysisCache(
   analysisData: AnalysisInfo[],
   currentWinrate: number | null,
-  gtpMoves: string[],
-  displayAnalysis: AnalysisInfo[],
+  analysisNodeId: string,
+  currentNodeId: string,
   setDisplayAnalysis: (v: AnalysisInfo[]) => void,
   setDisplayWinrate: (v: number | null) => void,
 ) {
-  const cacheRef = useRef<Map<number, CacheEntry>>(new Map());
-  const analysisDataRef = useRef(analysisData);
-  const currentWinrateRef = useRef(currentWinrate);
-  const prevMoveCountRef = useRef(-1);
+  const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
 
-  // Keep latest values in refs (read inside effects/event handlers)
+  // 缓存最近一次到达的分析。只有它确实属于当前展示的局面时才刷新展示，
+  // 避免导航瞬间把旧局面的 info 显示成新局面的分析。
   useEffect(() => {
-    analysisDataRef.current = analysisData;
-    currentWinrateRef.current = currentWinrate;
-  });
+    if (analysisData.length === 0) return;
 
-  // Cache live analysis data whenever it arrives
-  useEffect(() => {
-    if (analysisData.length > 0) {
-      const idx = gtpMoves.length;
-      cacheRef.current.set(idx, { data: analysisData, winrate: currentWinrate });
+    cacheRef.current.set(analysisNodeId, {
+      data: analysisData,
+      winrate: currentWinrate,
+    });
+
+    if (analysisNodeId === currentNodeId) {
       setDisplayAnalysis(analysisData);
       setDisplayWinrate(currentWinrate);
     }
-  }, [analysisData, currentWinrate, gtpMoves.length, setDisplayAnalysis, setDisplayWinrate]);
+  }, [
+    analysisData,
+    currentWinrate,
+    analysisNodeId,
+    currentNodeId,
+    setDisplayAnalysis,
+    setDisplayWinrate,
+  ]);
 
-  return {
-    cacheRef,
-    analysisDataRef,
-    currentWinrateRef,
-    prevMoveCountRef,
-  };
+  return { cacheRef };
 }

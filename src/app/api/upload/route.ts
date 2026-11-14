@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { AuthError } from '@/lib/auth-server';
 import { resolveUserStorageKey } from '@/lib/user-key';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
+import { isValidSgfFileName, isValidSgfFileSize } from '@/lib/record-limits';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,8 +18,11 @@ export async function POST(request: NextRequest) {
       fileKey?: string;
     };
 
-    if (!fileName || typeof fileName !== 'string') {
-      return NextResponse.json({ error: '缺少 fileName' }, { status: 400 });
+    if (!isValidSgfFileName(fileName)) {
+      return NextResponse.json({ error: '缺少或非法的 fileName' }, { status: 400 });
+    }
+    if (!isValidSgfFileSize(fileSize)) {
+      return NextResponse.json({ error: '文件大小非法或超过 5MB 限制' }, { status: 400 });
     }
 
     // Use provided fileKey for overwrite, otherwise generate a new one
@@ -34,7 +38,7 @@ export async function POST(request: NextRequest) {
       Bucket: r2Bucket,
       Key: fileKey,
       ContentType: 'application/x-go-sgf',
-      ContentLength: fileSize ?? undefined,
+      ContentLength: fileSize,
     });
 
     // @ts-expect-error pnpm may produce mismatched @smithy/types versions across AWS SDK packages

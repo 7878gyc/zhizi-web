@@ -3,6 +3,7 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { AuthError, ownsFileKey } from '@/lib/auth-server';
 import { resolveUserStorageKey } from '@/lib/user-key';
 import { prisma } from '@/lib/prisma';
+import { isValidSgfFileName } from '@/lib/record-limits';
 import { s3Client, r2Bucket } from '@/lib/r2-client';
 
 /** 更新棋谱记录（当前仅支持更新 fileName） */
@@ -25,8 +26,8 @@ export async function PATCH(
     const body = await request.json();
     const { fileName } = body as { fileName?: string };
 
-    if (!fileName || typeof fileName !== 'string') {
-      return NextResponse.json({ error: '缺少 fileName' }, { status: 400 });
+    if (!isValidSgfFileName(fileName)) {
+      return NextResponse.json({ error: '缺少或非法的 fileName' }, { status: 400 });
     }
 
     const updated = await prisma.record.update({

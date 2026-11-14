@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
-  prisma: { record: { count: vi.fn(), findMany: vi.fn(), update: vi.fn() } },
+  prisma: {
+    record: { count: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  },
 }));
 
 vi.mock('@/lib/r2-client', () => ({
@@ -93,7 +96,6 @@ describe('resolveUserStorageKey / 老数据迁移', () => {
   });
 
   it('skips records whose fileKey is not under the legacy prefix', async () => {
-    const legacy = legacyHashIdentifier(IDENTIFIER);
     const salted = hashIdentifier(IDENTIFIER);
     countMock.mockResolvedValue(1);
     findManyMock.mockResolvedValue([{ id: 'bad', fileKey: 'records/someone-else/x.sgf' }]);

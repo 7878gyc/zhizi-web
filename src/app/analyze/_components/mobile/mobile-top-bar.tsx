@@ -120,6 +120,7 @@ export function MobileTopBar({
             : 'text-[#4A9EFF] border-[#4A9EFF]/30 hover:bg-[#4A9EFF]/10'
         )}
         onClick={onToggleAnalyze}
+        disabled={isConnecting}
       >
         {isConnecting ? (
           <>连接中</>

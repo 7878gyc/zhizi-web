@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AuthError, ownsFileKey } from '@/lib/auth-server';
 import { resolveUserStorageKey } from '@/lib/user-key';
 import { prisma } from '@/lib/prisma';
+import { isValidSgfFileName, isValidSgfFileSize } from '@/lib/record-limits';
 
 /** 获取当前用户的棋谱列表 */
 export async function GET(request: NextRequest) {
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
       gameInfo?: Record<string, unknown>;
     };
 
-    if (!fileName || !fileKey || typeof fileSize !== 'number') {
-      return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    if (!fileName || !fileKey || !isValidSgfFileName(fileName) || !isValidSgfFileSize(fileSize)) {
+      return NextResponse.json({ error: '缺少必要参数或文件信息非法' }, { status: 400 });
     }
 
     // 归属校验：fileKey 必须位于当前用户自己的 R2 目录下，防止引用他人文件（IDOR）

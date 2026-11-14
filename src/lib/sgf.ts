@@ -1,11 +1,13 @@
-import type { MoveNode, AnalysisInfo } from './go-types';
+import type { MoveNode, AnalysisInfo, AnalysisCache } from './go-types';
+
+const GTP_COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
 
 function gtpToSgfCoord(move: string, boardSize: number): string {
   if (typeof move !== 'string' || move.length < 2) return '';
-  const code = move.charCodeAt(0);
-  const colBoard = code > 73 ? code - 66 : code - 65;
+  const colBoard = GTP_COL_LETTERS.indexOf(move[0].toUpperCase());
   const rowBoard = boardSize - parseInt(move.substring(1), 10);
-  if (rowBoard < 0 || rowBoard >= boardSize) return '';
+  if (colBoard < 0 || colBoard >= boardSize) return '';
+  if (!Number.isFinite(rowBoard) || rowBoard < 0 || rowBoard >= boardSize) return '';
   return String.fromCharCode(97 + colBoard) + String.fromCharCode(97 + rowBoard);
 }
 
@@ -13,9 +15,9 @@ export function sgfToGtpCoord(coord: string, boardSize: number): string {
   if (typeof coord !== 'string' || coord.length < 2) return '';
   const colBoard = coord.charCodeAt(0) - 97;
   const rowBoard = coord.charCodeAt(1) - 97;
-  const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
-  const col = COL_LETTERS[colBoard];
-  if (!col || rowBoard < 0 || rowBoard >= boardSize) return '';
+  const col = GTP_COL_LETTERS[colBoard];
+  if (!col || colBoard >= boardSize) return '';
+  if (rowBoard < 0 || rowBoard >= boardSize) return '';
   return col + (boardSize - rowBoard);
 }
 
@@ -45,7 +47,7 @@ function formatLZProperty(
   const moves = sorted.map(m => {
     const coord = gtpToSgfCoord(m.move, boardSize);
     const pv = (m.pv && m.pv.length > 0)
-      ? ' pv ' + m.pv.map(c => gtpToSgfCoord(c, boardSize)).join(' ')
+      ? ' pv ' + m.pv.map(c => gtpToSgfCoord(c, boardSize)).filter(Boolean).join(' ')
       : '';
     return `move ${coord} visits ${m.visits} winrate ${Math.round(m.winrate * 10000)} prior ${Math.round(m.prior * 10000)} scoreMean ${(m.scoreMean ?? 0).toFixed(2)}${pv}`;
   }).join(' info ');
@@ -80,22 +82,12 @@ function formatComment(
   ].join('\\n');
 }
 
-function getMainBranchPath(root: MoveNode): MoveNode[] {
-  const path: MoveNode[] = [];
-  let node: MoveNode | null = root;
-  while (node) {
-    path.push(node);
-    node = node.children.length > 0 ? node.children[0] : null;
-  }
-  return path;
-}
-
 export interface SgfOptions {
   boardSize: number;
   komi: number;
   rules: string;
   moveTree: MoveNode;
-  analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+  analysisCache?: AnalysisCache;
   includeAnalysis?: boolean;
   playerBlack?: string;
   playerWhite?: string;
@@ -113,44 +105,72 @@ export function generateSGF(options: SgfOptions): string {
     playerWhite = 'White',
   } = options;
 
-  const mainBranch = getMainBranchPath(moveTree);
+  const rootProps: string[] = [
+    'GM[1]',
+    'FF[4]',
+    'CA[UTF-8]',
+    `SZ[${boardSize}]`,
+    `KM[${komi}]`,
+    `RU[${escapeSgfText(rules)}]`,
+    `PB[${escapeSgfText(playerBlack)}]`,
+    `PW[${escapeSgfText(playerWhite)}]`,
+    `DT[${new Date().toISOString().slice(0, 10)}]`,
+  ];
 
-  const lines: string[] = [];
-  lines.push('(;');
-  lines.push('GM[1]');
-  lines.push('FF[4]');
-  lines.push('CA[UTF-8]');
-  lines.push(`SZ[${boardSize}]`);
-  lines.push(`KM[${komi.toFixed(1)}]`);
-  lines.push(`RU[${rules}]`);
-  lines.push(`PB[${escapeSgfText(playerBlack)}]`);
-  lines.push(`PW[${escapeSgfText(playerWhite)}]`);
-  lines.push(`DT[${new Date().toISOString().slice(0, 10).replace(/-/g, '-')}]`);
+  // 让子 / 加子：不写回 AB/AW 会让导入的让子棋在保存后丢掉预置子。
+  const handicap = moveTree.handicapStones ?? [];
+  const ab = handicap
+    .filter(s => s.color === 'black')
+    .map(s => gtpToSgfCoord(s.move, boardSize))
+    .filter(Boolean);
+  const aw = handicap
+    .filter(s => s.color === 'white')
+    .map(s => gtpToSgfCoord(s.move, boardSize))
+    .filter(Boolean);
+  if (ab.length > 0) rootProps.push(`AB${ab.map(c => `[${c}]`).join('')}`);
+  if (aw.length > 0) rootProps.push(`AW${aw.map(c => `[${c}]`).join('')}`);
 
-  for (let i = 1; i < mainBranch.length; i++) {
-    const node = mainBranch[i];
-    if (!node.move || node.move === 'root') continue;
+  const serializeNode = (node: MoveNode): string => {
+    if (!node.move || node.move === 'root' || !node.color) return '';
 
-    const isBlack = node.color === 'black';
-    const prefix = isBlack ? 'B' : 'W';
     const coord = gtpToSgfCoord(node.move, boardSize);
-    const nodeProps: string[] = [`${prefix}[${coord}]`];
+    const props: string[] = [`${node.color === 'black' ? 'B' : 'W'}[${coord}]`];
 
     if (includeAnalysis && analysisCache) {
-      const cached = analysisCache.get(i);
+      const cached = analysisCache.get(node.id);
       if (cached && cached.data.length > 0) {
         const lz = formatLZProperty(cached.data, cached.winrate, boardSize);
-        const comment = formatComment(cached.data, cached.winrate, isBlack, komi);
-        if (lz) nodeProps.push(`LZ[${escapeSgfText(lz)}]`);
-        if (comment) nodeProps.push(`C[${escapeSgfText(comment)}]`);
+        const comment = formatComment(cached.data, cached.winrate, node.color === 'black', komi);
+        if (lz) props.push(`LZ[${escapeSgfText(lz)}]`);
+        if (comment) props.push(`C[${escapeSgfText(comment)}]`);
       }
     }
 
-    lines.push(`;${nodeProps.join('')}`);
-  }
+    let text = `;${props.join('')}`;
+    const children = node.children.map(serializeNode).filter(Boolean);
+    if (children.length === 1) {
+      text += children[0];
+    } else if (children.length > 1) {
+      // 有多个分支时，所有分支都必须用括号包起来；否则第二个分支会被
+      // SGF 解析器理解成第一个分支后续节点的变体。
+      for (const child of children) {
+        text += `(${child})`;
+      }
+    }
+    return text;
+  };
 
-  lines.push(')');
-  return lines.join('');
+  const serializedChildren = moveTree.children.map(serializeNode).filter(Boolean);
+  let out = `(;${rootProps.join('')}`;
+  if (serializedChildren.length === 1) {
+    out += serializedChildren[0];
+  } else if (serializedChildren.length > 1) {
+    for (const child of serializedChildren) {
+      out += `(${child})`;
+    }
+  }
+  out += ')';
+  return out;
 }
 
 export function generatePureSGF(options: SgfOptions): string {

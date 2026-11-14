@@ -25,6 +25,18 @@ describe('parseSgf', () => {
     expect(result.rules).toBe('chinese');
   });
 
+  it('keeps KM[0] as 0 instead of replacing it with the default', () => {
+    expect(parseSgf('(;KM[0])').komi).toBe(0);
+    expect(parseSgf('(;KM[6.75])').komi).toBe(6.75);
+  });
+
+  it('falls back to 19 for out-of-range SZ values', () => {
+    expect(parseSgf('(;SZ[1])').boardSize).toBe(19);
+    expect(parseSgf('(;SZ[0])').boardSize).toBe(19);
+    expect(parseSgf('(;SZ[25])').boardSize).toBe(19);
+    expect(parseSgf('(;SZ[9])').boardSize).toBe(9);
+  });
+
   it('strips BOM and preamble before the first parenthesis', () => {
     const sgf = '\uFEFFsome preamble text\n(;SZ[9])';
     expect(parseSgf(sgf).boardSize).toBe(9);
@@ -97,7 +109,7 @@ describe('sgfToMoveTree', () => {
 
     // black node: engine analyzed from white's perspective → black WR = 1 - 0.61
     expect(n1.winrate).toBeCloseTo(0.39);
-    const cached = result.analysisCache.get(1);
+    const cached = result.analysisCache.get(n1.id);
     expect(cached).toBeDefined();
     expect(cached!.data).toHaveLength(1);
     expect(cached!.data[0].move).toBe('Q16');
@@ -111,7 +123,8 @@ describe('sgfToMoveTree', () => {
     const sgf =
       '(;GM[1]SZ[19]KM[7.5];B[pd]LZ[KataGo 61 1200 2.50 1.20move pd visits 1200 winrate 6100 prior 2500 scoreMean 2.50])';
     const result = sgfToMoveTree(sgf)!;
-    const cached = result.analysisCache.get(1);
+    const n1 = result.tree.children[0];
+    const cached = result.analysisCache.get(n1.id);
     expect(cached).toBeDefined();
     expect(cached!.data).toHaveLength(1);
     expect(cached!.data[0].move).toBe('Q16');
@@ -121,7 +134,7 @@ describe('sgfToMoveTree', () => {
     const sgf = '(;SZ[19];B[pd]LZ[garbage])';
     const result = sgfToMoveTree(sgf)!;
     expect(result.tree.children[0].winrate).toBeUndefined();
-    expect(result.analysisCache.has(1)).toBe(false);
+    expect(result.analysisCache.has(result.tree.children[0].id)).toBe(false);
   });
 
   it('extracts komi, rules and players from the header', () => {

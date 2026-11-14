@@ -15,9 +15,10 @@ import { useZhiziAnalysis } from '@/hooks/use-zhizi-analysis';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { saveUser, getUser, logout, fetchCurrentUser } from '@/lib/auth';
 import type { AiConfig, AnalysisInfo } from '@/lib/go-types';
-import { gtpToCoord, GPU_TYPES, WEIGHTS, KATA_ENGINES, DEFAULT_ENGINE } from '@/lib/go-types';
+import { gtpToCoord, getExtendedLine, getPathToNode, GPU_TYPES, WEIGHTS, KATA_ENGINES, DEFAULT_ENGINE } from '@/lib/go-types';
 import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
+import { buildAnalysisSyncKey, toSyncParams } from '@/lib/analysis-key';
 import {
   MobileAnalyzeLayout,
 } from './_components/mobile/mobile-analyze-layout';
@@ -61,17 +62,11 @@ export default function AnalyzePage() {
   const [playerWhite, setPlayerWhite] = useState('');
 
   // --- Analysis mode ---
-  const [analysisMode, setAnalysisMode] = useState<'local' | 'remote'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('zhizi_analysis_mode');
-      if (saved === 'remote') return 'remote';
-    }
-    return 'local';
-  });
+  // 远程算力尚未接入；先固定为本地分析，避免用 localStorage 绕过登录校验。
+  const analysisMode = 'local' as const;
 
   // --- Auth ---
   useEffect(() => {
-    if (analysisMode === 'remote') return;
     let active = true;
     const cached = getUser();
     if (cached) setUserInfo(cached as { phone?: string; email?: string; username?: string });
@@ -90,7 +85,7 @@ export default function AnalyzePage() {
     return () => {
       active = false;
     };
-  }, [router, analysisMode]);
+  }, [router]);
 
   // --- Game state ---
   const {
@@ -104,12 +99,10 @@ export default function AnalyzePage() {
     lastMove,
     gtpMoves,
     currentMoveNumber,
-    winrateHistory: _wrHist,
     placeStone,
     goToPrevMove,
     goToNextMove,
     jumpToNode,
-    deleteNode,
     deleteBranch,
     resetBoard,
     setBoardSize,
@@ -136,16 +129,17 @@ export default function AnalyzePage() {
   // --- Analysis display cache ---
   const [displayAnalysis, setDisplayAnalysis] = useState<AnalysisInfo[]>([]);
   const [displayWinrate, setDisplayWinrate] = useState<number | null>(null);
+  // 当前这轮引擎同步对应的局面；分析结果按这个 nodeId 入缓存，而不是按手数。
+  const [analysisNodeId, setAnalysisNodeId] = useState('root');
 
-  const { cacheRef, analysisDataRef, currentWinrateRef, prevMoveCountRef } =
-    useAnalysisCache(
-      analysisData,
-      currentWinrate,
-      gtpMoves,
-      displayAnalysis,
-      setDisplayAnalysis,
-      setDisplayWinrate,
-    );
+  const { cacheRef } = useAnalysisCache(
+    analysisData,
+    currentWinrate,
+    analysisNodeId,
+    currentNodeId,
+    setDisplayAnalysis,
+    setDisplayWinrate,
+  );
 
   // --- Handicap stones (from imported SGF root AB/AW) ---
   const handicapStones = useMemo(
@@ -163,47 +157,41 @@ export default function AnalyzePage() {
     [moveTree],
   );
 
+  // 当前路径（root → 当前节点）以及供鹰眼使用的节点 id 列表。
+  const currentPath = useMemo(
+    () => getPathToNode(moveTree, currentNodeId),
+    [moveTree, currentNodeId],
+  );
+  const analysisPathIds = useMemo(
+    () => currentPath.map((node) => node.id),
+    [currentPath],
+  );
+
   // --- Winrate sync ---
-  const lastWinrateRef = useRef<number | null>(null);
+  // 不再做跨局面去重：节点级去重由 useGoGame.setCurrentWinrate 完成，
+  // 否则两个局面恰好同胜率时后一个节点会漏记。
   useEffect(() => {
+    if (analysisNodeId !== currentNodeId) return;
     if (
       currentWinrate !== null &&
       currentWinrate >= 0 &&
-      currentWinrate <= 1 &&
-      currentWinrate !== lastWinrateRef.current
+      currentWinrate <= 1
     ) {
-      lastWinrateRef.current = currentWinrate;
       setCurrentWinrate(currentWinrate);
     }
-  }, [currentWinrate, setCurrentWinrate]);
+  }, [currentWinrate, setCurrentWinrate, analysisNodeId, currentNodeId]);
 
-  // --- Sync and analyze on move change / connection ---
+  // --- Sync and analyze on position / connection change ---
+  const lastSyncKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isConnected) {
-      prevMoveCountRef.current = -1;
+      lastSyncKeyRef.current = null;
       return;
     }
-    // 连接建立后即把盘面交给 hook；hook 会在引擎 ready（含重连后）时
-    // 整盘重放并 kata-analyze，避免这里和重连逻辑重复触发。
-    if (gtpMoves.length === prevMoveCountRef.current) return;
 
-    const oldIdx = prevMoveCountRef.current;
-    if (oldIdx >= 0 && analysisDataRef.current.length > 0) {
-      cacheRef.current.set(oldIdx, {
-        data: analysisDataRef.current,
-        winrate: currentWinrateRef.current,
-      });
-    }
-    prevMoveCountRef.current = gtpMoves.length;
-
-    const newIdx = gtpMoves.length;
-    const cached = cacheRef.current.get(newIdx);
-    if (cached?.data.length) {
-      setDisplayAnalysis(cached.data);
-      setDisplayWinrate(cached.winrate);
-    }
-
-    syncAndAnalyze({
+    // 同步键包含 currentNodeId：同一手数切到另一分支也必须重新分析。
+    const syncKey = buildAnalysisSyncKey({
+      nodeId: currentNodeId,
       boardSize,
       komi,
       rules,
@@ -212,23 +200,57 @@ export default function AnalyzePage() {
       handicapStones,
       handicapWhiteStones,
     });
-  }, [isConnected, gtpMoves, boardSize, komi, rules, currentPlayer, handicapStones, handicapWhiteStones, syncAndAnalyze]);
+    if (syncKey === lastSyncKeyRef.current) return;
+    lastSyncKeyRef.current = syncKey;
 
-  // --- Load cached analysis on tree navigation ---
+    // 标记这轮分析属于哪个局面，并把该局面已有的缓存先展示出来；
+    // 没有缓存就清空，避免继续显示上一个局面的结果。
+    setAnalysisNodeId(currentNodeId);
+    const cached = cacheRef.current.get(currentNodeId);
+    setDisplayAnalysis(cached?.data ?? []);
+    setDisplayWinrate(cached?.winrate ?? null);
+
+    syncAndAnalyze(
+      toSyncParams({
+        nodeId: currentNodeId,
+        boardSize,
+        komi,
+        rules,
+        player: currentPlayer,
+        moves: gtpMoves,
+        handicapStones,
+        handicapWhiteStones,
+      }),
+    );
+  }, [
+    isConnected,
+    currentNodeId,
+    gtpMoves,
+    boardSize,
+    komi,
+    rules,
+    currentPlayer,
+    handicapStones,
+    handicapWhiteStones,
+    syncAndAnalyze,
+    cacheRef,
+  ]);
+
+  // --- Load cached analysis on tree navigation while offline ---
   useEffect(() => {
     if (isConnected) return;
-    const cached = cacheRef.current.get(currentMoveNumber);
-    if (cached?.data.length) {
-      setDisplayAnalysis(cached.data);
-      setDisplayWinrate(cached.winrate);
-    } else {
-      setDisplayAnalysis([]);
-      setDisplayWinrate(null);
-    }
-  }, [currentMoveNumber, isConnected]);
+    const cached = cacheRef.current.get(currentNodeId);
+    setDisplayAnalysis(cached?.data ?? []);
+    setDisplayWinrate(cached?.winrate ?? null);
+  }, [currentNodeId, isConnected, cacheRef]);
 
-  // --- Auto analyze ---
-  useAutoAnalyze(isAutoAnalyzing, isConnected, goToNextMove);
+  // --- Auto analyze: 当前局面已有分析结果才前进 ---
+  useAutoAnalyze(
+    isAutoAnalyzing,
+    isConnected,
+    goToNextMove,
+    () => cacheRef.current.has(currentNodeId),
+  );
 
   // --- Variation preview cleanup ---
   useEffect(() => {
@@ -304,10 +326,10 @@ export default function AnalyzePage() {
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
       result.analysisCache.forEach((value, key) => cacheRef.current.set(key, value));
-      loadFromTree(result.tree);
+      loadFromTree(result.tree, undefined, result.boardSize);
       if (sgfInputRef.current) sgfInputRef.current.value = '';
     },
-    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree],
+    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree, cacheRef],
   );
 
   // --- SGF import: Foxwq ---
@@ -339,9 +361,9 @@ export default function AnalyzePage() {
       setDisplayAnalysis([]);
       setDisplayWinrate(null);
       result.analysisCache.forEach((value, key) => cacheRef.current.set(key, value));
-      loadFromTree(result.tree);
+      loadFromTree(result.tree, undefined, result.boardSize);
     },
-    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree],
+    [disconnect, boardSize, setBoardSize, setKomi, setRules, loadFromTree, cacheRef],
   );
 
   // --- SGF import: Cloud ---
@@ -349,7 +371,7 @@ export default function AnalyzePage() {
     setShowCloudImport(true);
     setCloudError('');
     fetchCloudRecords();
-  }, [fetchCloudRecords]);
+  }, [fetchCloudRecords, setCloudError]);
 
   const handleSelectCloudRecord = useCallback(
     async (rec: { id: string; fileName: string; fileKey?: string }) => {
@@ -369,19 +391,15 @@ export default function AnalyzePage() {
         const parsed = parseSgfContent(sgfText);
         if (!parsed) throw new Error('无法解析棋谱文件');
 
-        if (parsed.boardSize >= 1 && parsed.boardSize <= 19) setBoardSize(parsed.boardSize);
+        if (parsed.boardSize >= 2 && parsed.boardSize <= 19) setBoardSize(parsed.boardSize);
         setKomi(parsed.komi);
         if (parsed.rules) setRules(parsed.rules);
         setPlayerBlack(parsed.playerBlack);
         setPlayerWhite(parsed.playerWhite);
         setCloudSourceRecordId(id);
         cloudSourceFileKeyRef.current = rec.fileKey ?? null;
-        loadFromTree(parsed.tree);
+        loadFromTree(parsed.tree, undefined, parsed.boardSize);
         if (parsed.analysisCache) cacheRef.current = parsed.analysisCache;
-
-        let lastNode = parsed.tree;
-        while (lastNode.children.length > 0) lastNode = lastNode.children[0];
-        jumpToNode(lastNode.id);
 
         setShowCloudImport(false);
       } catch (err) {
@@ -390,7 +408,7 @@ export default function AnalyzePage() {
         setCloudImporting(null);
       }
     },
-    [setBoardSize, setKomi, setRules, loadFromTree, jumpToNode],
+    [setBoardSize, setKomi, setRules, loadFromTree, cacheRef, setCloudError, setCloudImporting],
   );
 
   const handleDeleteCloudRecord = useCallback(
@@ -436,7 +454,7 @@ export default function AnalyzePage() {
         alert('保存 SGF 失败');
       }
     },
-    [boardSize, komi, rules, moveTree, playerBlack, playerWhite],
+    [boardSize, komi, rules, moveTree, playerBlack, playerWhite, cacheRef],
   );
 
   const handleSaveToCloud = useCallback(async () => {
@@ -503,7 +521,7 @@ export default function AnalyzePage() {
     } finally {
       setCloudSaving(false);
     }
-  }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite, cloudSourceRecordId]);
+  }, [boardSize, komi, rules, moveTree, playerBlack, playerWhite, cloudSourceRecordId, cacheRef]);
 
   // --- Variation selection ---
   const handleSelectMove = useCallback(
@@ -602,25 +620,23 @@ export default function AnalyzePage() {
   }, [moveTree, currentNodeId, jumpToNode]);
 
   // --- Winrate chart ---
+  // 以当前分支为准：root → 当前节点，再沿首选子节点走到叶子。
+  const activeLine = useMemo(
+    () => getExtendedLine(moveTree, currentNodeId),
+    [moveTree, currentNodeId],
+  );
+
   const fullWinrateHistory = useMemo(() => {
-    const history: (number | null)[] = [null];
-    let node: typeof moveTree | null = moveTree;
-    while (node) {
-      if (node.moveNumber > 0) history.push(node.winrate ?? null);
-      node = node.children.length > 0 ? node.children[0] : null;
-    }
-    return history;
-  }, [moveTree]);
+    return activeLine.map((node, idx) => (idx === 0 ? null : node.winrate ?? null));
+  }, [activeLine]);
 
   const moveNumberToNodeId = useMemo(() => {
     const map = new Map<number, string>();
-    let node: typeof moveTree | null = moveTree;
-    while (node) {
+    for (const node of activeLine) {
       if (node.moveNumber > 0) map.set(node.moveNumber, node.id);
-      node = node.children.length > 0 ? node.children[0] : null;
     }
     return map;
-  }, [moveTree]);
+  }, [activeLine]);
 
   const handleWinrateClick = useCallback(
     (moveNumber: number) => {
@@ -647,17 +663,20 @@ export default function AnalyzePage() {
     setPlayerWhite('');
     setCloudSourceRecordId(null);
     cloudSourceFileKeyRef.current = null;
-  }, [disconnect, resetBoard]);
+  }, [disconnect, resetBoard, cacheRef]);
 
   // --- Board size change ---
   const handleSetSize = useCallback(
     (size: number) => {
       if (size !== boardSize) {
         disconnect();
+        cacheRef.current.clear();
+        setDisplayAnalysis([]);
+        setDisplayWinrate(null);
         setBoardSize(size);
       }
     },
-    [boardSize, disconnect, setBoardSize],
+    [boardSize, disconnect, setBoardSize, cacheRef],
   );
 
   // ============================================================
@@ -704,7 +723,6 @@ export default function AnalyzePage() {
           winrateHistory={fullWinrateHistory}
           displayWinrate={displayWinrate}
           analysisData={displayAnalysis}
-          selectedPv={displayAnalysis[0] ?? null}
           variationMoves={variationMoves ?? []}
           selectedMove={selectedMove}
           onSelectMove={handleSelectMove}
@@ -732,17 +750,16 @@ export default function AnalyzePage() {
           currentNodeId={currentNodeId}
           currentMoveNumber={currentMoveNumber}
           onJumpToNode={jumpToNode}
-          onDeleteNode={deleteNode}
           onDeleteBranch={deleteBranch}
           gtpMoves={gtpMoves}
           analysisCache={cacheRef.current}
+          analysisPathIds={analysisPathIds}
           onJumpToMove={handleWinrateClick}
           isAnalyzing={isAnalyzing}
           isAutoAnalyze={isAutoAnalyzing}
           isConnected={isConnected}
           isConnecting={isConnecting}
           analysisError={analysisError}
-          logs={logs}
           onToggleAnalyze={() =>
             isAnalyzing ? handleStopAnalysis() : handleStartAnalysis()
           }
@@ -851,26 +868,17 @@ export default function AnalyzePage() {
 
         {/* Right: Analysis panel */}
         <div className="w-[340px] bg-[#16213E]/40 border-l border-[#2A3A5C]/30 flex flex-col overflow-y-auto p-3 gap-4 scrollbar-thin">
-          {analysisMode === 'local' && (
-            <AiConfigPanel
-              selectedConfig={selectedConfig}
-              onSelectConfig={setSelectedConfig}
-              isConnected={isConnected}
-              isConnecting={isConnecting}
-              isAnalyzing={isAnalyzing}
-              onStartAnalysis={handleStartAnalysis}
-              onStopAnalysis={handleStopAnalysis}
-              isAutoAnalyzing={isAutoAnalyzing}
-              onToggleAutoAnalyze={() => setIsAutoAnalyzing((p) => !p)}
-              error={analysisError}
-            />
-          )}
-
-          {analysisMode === 'remote' && (
-            <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
-              <p className="text-xs text-cyan-400">远程算力模式（即将支持）</p>
-            </div>
-          )}
+          <AiConfigPanel
+            selectedConfig={selectedConfig}
+            onSelectConfig={setSelectedConfig}
+            isConnected={isConnected}
+            isConnecting={isConnecting}
+            onStartAnalysis={handleStartAnalysis}
+            onStopAnalysis={handleStopAnalysis}
+            isAutoAnalyzing={isAutoAnalyzing}
+            onToggleAutoAnalyze={() => setIsAutoAnalyzing((p) => !p)}
+            error={analysisError}
+          />
 
           <SaveSgfMenu
             cloudSourceRecordId={cloudSourceRecordId}
@@ -886,7 +894,6 @@ export default function AnalyzePage() {
             tree={moveTree}
             currentNodeId={currentNodeId}
             onJumpToNode={jumpToNode}
-            onDeleteNode={deleteNode}
             onDeleteBranch={deleteBranch}
           />
 
@@ -907,11 +914,9 @@ export default function AnalyzePage() {
           />
 
           <HawkEyePanel
-            analysisData={displayAnalysis}
-            currentWinrate={displayWinrate}
             gtpMoves={gtpMoves}
-            isConnected={isConnected}
             analysisCache={cacheRef.current}
+            analysisPathIds={analysisPathIds}
             onJumpToMove={handleWinrateClick}
           />
         </div>

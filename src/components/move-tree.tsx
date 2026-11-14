@@ -7,7 +7,6 @@ interface MoveTreeProps {
   tree: MoveNode;
   currentNodeId: string;
   onJumpToNode: (nodeId: string) => void;
-  onDeleteNode: (nodeId: string) => void;
   onDeleteBranch: (nodeId: string) => void;
   /** Hide the panel title (e.g. when rendered inside a tab bar that already labels it). */
   hideTitle?: boolean;
@@ -35,7 +34,6 @@ export default function MoveTree({
   tree,
   currentNodeId,
   onJumpToNode,
-  onDeleteNode,
   onDeleteBranch,
   hideTitle,
 }: MoveTreeProps) {
@@ -250,15 +248,6 @@ export default function MoveTree({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            className="w-full px-3 py-1.5 text-left text-xs text-[#E0E0E0] hover:bg-[#2A3A5C] transition-colors"
-            onClick={() => {
-              onDeleteNode(contextMenu.nodeId);
-              setContextMenu(null);
-            }}
-          >
-            删除此手
-          </button>
           <button
             className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-[#2A3A5C] transition-colors"
             onClick={() => {

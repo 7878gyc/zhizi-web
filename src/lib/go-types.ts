@@ -34,6 +34,17 @@ export interface AnalysisInfo {
   speed?: number;     // visits per second
 }
 
+/**
+ * 分析缓存条目。缓存以 MoveNode.id 为键，不能用「手数」做键：
+ * 同一手数的不同分支是不同局面，按手数缓存会互相覆盖。
+ */
+export interface AnalysisCacheEntry {
+  data: AnalysisInfo[];
+  winrate: number | null;
+}
+
+export type AnalysisCache = Map<string, AnalysisCacheEntry>;
+
 export interface GameState {
   boardSize: number;
   komi: number;
@@ -164,18 +175,36 @@ export function coordToGTP(row: number, col: number, boardSize: number = 19): st
 }
 
 export function gtpToCoord(gtp: string, boardSize: number = 19): { row: number; col: number } {
+  if (typeof gtp !== 'string' || gtp.length < 2) {
+    throw new Error(`Invalid GTP coordinate: ${String(gtp)}`);
+  }
   const letter = gtp[0].toUpperCase();
   const number = parseInt(gtp.slice(1), 10);
   const col = COL_LETTERS.indexOf(letter);
   const row = boardSize - number;
+  if (
+    col < 0 ||
+    col >= boardSize ||
+    !Number.isFinite(number) ||
+    row < 0 ||
+    row >= boardSize
+  ) {
+    throw new Error(`Invalid GTP coordinate: ${gtp}`);
+  }
   return { row, col };
 }
 
 // --- SGF coordinate conversion ---
 export function sgfToCoord(sgf: string, boardSize: number = 19): { row: number; col: number } {
   // SGF: 'a' = 0, 'b' = 1, ... 's' = 18（连续编码，不跳过任何字母）
+  if (typeof sgf !== 'string' || sgf.length < 2) {
+    throw new Error(`Invalid SGF coordinate: ${String(sgf)}`);
+  }
   const col = sgf.charCodeAt(0) - 'a'.charCodeAt(0);
   const row = sgf.charCodeAt(1) - 'a'.charCodeAt(0);
+  if (col < 0 || col >= boardSize || row < 0 || row >= boardSize) {
+    throw new Error(`Invalid SGF coordinate: ${sgf}`);
+  }
   // Convert to our coordinate system (row 0 = top)
   return { row, col };
 }
@@ -292,6 +321,22 @@ export function getPathToNode(root: MoveNode, targetId: string): MoveNode[] {
     }
   }
   return [];
+}
+
+/**
+ * 以某个节点为基准取出「当前这条线」：root → target，再沿 target 的首选
+ * 子节点一直走到叶子。胜率曲线/点击跳转用它，避免永远落回主分支。
+ */
+export function getExtendedLine(root: MoveNode, targetId: string): MoveNode[] {
+  const path = getPathToNode(root, targetId);
+  if (path.length === 0) return [];
+
+  let node = path[path.length - 1];
+  while (node.children.length > 0) {
+    node = node.children[0];
+    path.push(node);
+  }
+  return path;
 }
 
 let nodeCounter = 0;

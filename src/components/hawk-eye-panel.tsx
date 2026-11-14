@@ -1,12 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import type { AnalysisInfo } from '@/lib/go-types';
-
-interface HawkEyeRecord {
-  candidates: AnalysisInfo[];
-  winrate: number;
-}
+import type { AnalysisCache, AnalysisCacheEntry } from '@/lib/go-types';
 
 export interface HawkEyeMoveResult {
   moveNumber: number;
@@ -30,40 +24,61 @@ const SEVERITY_BG = ['', 'rgba(255,215,0,0.1)', 'rgba(255,140,0,0.1)', 'rgba(255
 const PROBLEM_THRESHOLDS = [0, -0.03, -0.06, -0.12, -0.24];
 
 interface HawkEyePanelProps {
-  analysisData: AnalysisInfo[];
-  currentWinrate: number | null;
+  /** nodeId → analysis，缓存键必须是局面而不是手数 */
+  analysisCache: AnalysisCache;
+  /** 当前主线/分支的节点 id，下标 k 对应「已走 k 手」的局面 */
+  analysisPathIds: string[];
   gtpMoves: string[];
-  isConnected: boolean;
-  /** Pre-built analysis cache from SGF import (offline mode). Populates internal history on mount. */
-  analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
   /** Jump to the given move number in the game tree. */
   onJumpToMove?: (moveNumber: number) => void;
   /** Hide the panel title (e.g. when rendered inside a tab bar that already labels it). */
   hideTitle?: boolean;
 }
 
-function computeResults(history: Map<number, HawkEyeRecord>, gtpMoves: string[]): HawkEyeMoveResult[] {
-  const totalPositions = gtpMoves.length + 1;
+function computeResults(
+  cache: AnalysisCache,
+  pathIds: string[],
+  gtpMoves: string[],
+): HawkEyeMoveResult[] {
+  const totalMoves = gtpMoves.length;
   const res: HawkEyeMoveResult[] = [];
 
-  for (let k = 0; k < totalPositions; k++) {
-    const record = history.get(k);
-    const moveColor = k > 0 ? (k % 2 === 1 ? 'black' : 'white') : null;
-    const actualMove = k < gtpMoves.length ? gtpMoves[k].split(' ')[1] : null;
+  for (let k = 0; k <= totalMoves; k++) {
+    const nodeId = pathIds[k];
+    const record: AnalysisCacheEntry | undefined = nodeId ? cache.get(nodeId) : undefined;
+
+    // 这手棋的颜色直接取 GTP 记录（兼容让子/同色连续等非标准交替）。
+    const actualMove = k < totalMoves ? gtpMoves[k].split(' ')[1] : null;
+    const moveColor: 'black' | 'white' | null = k < totalMoves
+      ? (gtpMoves[k].startsWith('B') ? 'black' : 'white')
+      : null;
 
     if (!record) {
       res.push({
-        moveNumber: k, moveColor, actualMove,
-        winrate: null, aiBestMove: null, aiMatches: [], isMatch: false, isBest: false,
-        matchRank: null, scoreMean: null, winrateDrop: null, isProblem: false, problemSeverity: 0,
+        moveNumber: k + 1,
+        moveColor,
+        actualMove,
+        winrate: null,
+        aiBestMove: null,
+        aiMatches: [],
+        isMatch: false,
+        isBest: false,
+        matchRank: null,
+        scoreMean: null,
+        winrateDrop: null,
+        isProblem: false,
+        problemSeverity: 0,
       });
       continue;
     }
 
     const rawWR = record.winrate;
-    const blackWR = rawWR != null ? (k % 2 === 0 ? rawWR : 1 - rawWR) : null;
+    // 引擎的 winrate 是「当前行棋方」视角；当前行棋方就是这手棋的颜色。
+    const blackWR = rawWR != null && moveColor
+      ? (moveColor === 'black' ? rawWR : 1 - rawWR)
+      : null;
 
-    const sorted = [...record.candidates].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const sorted = [...record.data].sort((a, b) => (a.order || 0) - (b.order || 0));
 
     let isMatch = false;
     let isBest = false;
@@ -78,36 +93,43 @@ function computeResults(history: Map<number, HawkEyeRecord>, gtpMoves: string[])
     }
 
     res.push({
-      moveNumber: k, moveColor, actualMove,
+      moveNumber: k + 1,
+      moveColor,
+      actualMove,
       winrate: blackWR,
       aiBestMove: sorted[0]?.move ?? null,
       aiMatches: sorted.slice(0, 5).map(c => c.move),
-      isMatch, isBest, matchRank,
-      scoreMean: sorted[0]?.scoreMean ?? sorted[0]?.scoreLead ?? null,
+      isMatch,
+      isBest,
+      matchRank,
+      scoreMean: sorted[0]?.scoreLead ?? sorted[0]?.scoreMean ?? null,
       winrateDrop: null,
       isProblem: false,
       problemSeverity: 0,
     });
   }
 
+  // 第 i 手（1-based）造成的胜率变化应归属 res[i-1]（actualMove 才是第 i 手），
+  // 之前挂到 res[i] 会整体错位一手。
   for (let i = 1; i < res.length; i++) {
-    const prev = res[i - 1];
-    const curr = res[i];
-    if (prev.winrate != null && curr.winrate != null) {
-      const drop = curr.winrate - prev.winrate;
-      curr.winrateDrop = curr.moveColor === 'black' ? drop : -drop;
-    }
+    const prevWR = res[i - 1].winrate;
+    const currWR = res[i].winrate;
+    if (prevWR == null || currWR == null) continue;
+
+    const drop = currWR - prevWR; // 黑方胜率变化
+    const target = res[i - 1];
+    // 黑棋下输时 drop 为负，白棋下输时 drop 为正；统一存成负数表示亏损。
+    target.winrateDrop = target.moveColor === 'black' ? drop : -drop;
   }
 
-  for (let i = 1; i < res.length; i++) {
+  for (let i = 0; i < res.length; i++) {
     const drop = res[i].winrateDrop;
-    if (drop != null) {
-      for (let s = PROBLEM_THRESHOLDS.length - 1; s >= 0; s--) {
-        if (drop <= PROBLEM_THRESHOLDS[s]) {
-          res[i].isProblem = s > 0;
-          res[i].problemSeverity = s;
-          break;
-        }
+    if (drop == null) continue;
+    for (let s = PROBLEM_THRESHOLDS.length - 1; s >= 0; s--) {
+      if (drop <= PROBLEM_THRESHOLDS[s]) {
+        res[i].isProblem = s > 0;
+        res[i].problemSeverity = s;
+        break;
       }
     }
   }
@@ -123,8 +145,9 @@ function ColorStats({ results, color, colorClass }: { results: HawkEyeMoveResult
   const matchRate = analyzed.length > 0 ? (matchCount / analyzed.length * 100).toFixed(1) : '--';
   const bestRate = analyzed.length > 0 ? (bestCount / analyzed.length * 100).toFixed(1) : '--';
   const problemMoves = analyzed.filter(r => r.isProblem);
-  const avgDrop = analyzed.length > 0
-    ? analyzed.filter(r => r.winrateDrop != null).reduce((s, r) => s + Math.abs(r.winrateDrop!), 0) / analyzed.length * 100
+  const drops = analyzed.filter(r => r.winrateDrop != null);
+  const avgDrop = drops.length > 0
+    ? drops.reduce((s, r) => s + Math.abs(r.winrateDrop!), 0) / drops.length * 100
     : 0;
 
   return (
@@ -149,68 +172,15 @@ function ColorStats({ results, color, colorClass }: { results: HawkEyeMoveResult
 }
 
 export default function HawkEyePanel({
-  analysisData,
-  currentWinrate,
-  gtpMoves,
-  isConnected,
   analysisCache,
+  analysisPathIds,
+  gtpMoves,
   onJumpToMove,
   hideTitle,
 }: HawkEyePanelProps) {
-  const historyRef = useRef<Map<number, HawkEyeRecord>>(new Map());
-  const [version, setVersion] = useState(0);
-
-  // Populate historyRef from pre-built analysis cache (SGF import / offline mode)
-  const populatedCacheRef = useRef<Map<number, { data: AnalysisInfo[]; winrate: number | null }> | undefined>(undefined);
-  useEffect(() => {
-    if (!analysisCache || analysisCache.size === 0) return;
-    // Skip if we've already populated from this exact cache instance
-    if (analysisCache === populatedCacheRef.current) return;
-    populatedCacheRef.current = analysisCache;
-
-    historyRef.current.clear();
-    analysisCache.forEach((record, key) => {
-      historyRef.current.set(key, {
-        candidates: record.data,
-        winrate: record.winrate ?? 0,
-      });
-    });
-    setVersion(v => v + 1);
-  }, [analysisCache]);
-
-  // Reactively sample analysis data: whenever the AI pushes new data
-  // (winrate or candidates change), record it for the current position and
-  // re-derive problem moves immediately.
-  useEffect(() => {
-    if (!isConnected) return;
-    const posIdx = gtpMoves.length;
-    if (analysisData.length === 0) return;
-
-    const prev = historyRef.current.get(posIdx);
-    if (prev) {
-      // Skip if nothing meaningful changed (candidates/winrate identical)
-      const winrateChanged = prev.winrate !== (currentWinrate ?? 0);
-      const candidatesChanged = prev.candidates.length !== analysisData.length
-        || prev.candidates.some((c, i) => {
-          const n = analysisData[i];
-          return !n || c.move !== n.move || c.winrate !== n.winrate
-            || c.scoreMean !== n.scoreMean || c.visits !== n.visits;
-        });
-      if (!winrateChanged && !candidatesChanged) return;
-    }
-
-    historyRef.current.set(posIdx, {
-      candidates: analysisData,
-      winrate: currentWinrate ?? 0,
-    });
-    setVersion(v => v + 1);
-  }, [analysisData, currentWinrate, isConnected, gtpMoves.length]);
-
-  const [results, setResults] = useState<HawkEyeMoveResult[]>([]);
-  useEffect(() => {
-    setResults(computeResults(historyRef.current, gtpMoves));
-  }, [version, gtpMoves]);
-
+  // 直接从共享缓存派生，不维护组件内历史：移动端面板卸载/重建、清空棋盘、
+  // 导入新 SGF 都不会留下上一局的残留数据。
+  const results = computeResults(analysisCache, analysisPathIds, gtpMoves);
   const totalMoves = results.filter(r => r.actualMove).length;
   const analyzedTotal = results.filter(r => r.actualMove && r.winrate != null).length;
 

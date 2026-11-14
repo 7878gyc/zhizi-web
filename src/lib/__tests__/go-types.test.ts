@@ -11,6 +11,7 @@ import {
   parseAnalysisLine,
   findNode,
   getPathToNode,
+  getExtendedLine,
   generateNodeId,
   createRootNode,
   type MoveNode,
@@ -52,6 +53,14 @@ describe('coordToGTP / gtpToCoord', () => {
   it('respects custom board size', () => {
     expect(coordToGTP(0, 0, 9)).toBe('A9');
     expect(gtpToCoord('E5', 9)).toEqual({ row: 4, col: 4 });
+  });
+
+  it('throws for pass / malformed / out-of-board coordinates', () => {
+    expect(() => gtpToCoord('pass')).toThrow();
+    expect(() => gtpToCoord('')).toThrow();
+    expect(() => gtpToCoord('I10')).toThrow();
+    expect(() => gtpToCoord('A20')).toThrow();
+    expect(() => gtpToCoord('T1', 9)).toThrow();
   });
 });
 
@@ -231,6 +240,13 @@ describe('move tree utilities', () => {
   it('returns empty path for unknown target', () => {
     const tree = buildTree();
     expect(getPathToNode(tree, 'nope')).toEqual([]);
+  });
+
+  it('extends the path from the target along the first child (current branch)', () => {
+    const tree = buildTree();
+    expect(getExtendedLine(tree, 'n2').map(n => n.id)).toEqual(['root', 'n1', 'n2']);
+    expect(getExtendedLine(tree, 'n1').map(n => n.id)).toEqual(['root', 'n1', 'n2']);
+    expect(getExtendedLine(tree, 'missing')).toEqual([]);
   });
 });
 

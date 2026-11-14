@@ -1,4 +1,4 @@
-import type { MoveNode, AnalysisInfo } from './go-types';
+import type { MoveNode, AnalysisInfo, AnalysisCache } from './go-types';
 import { generateNodeId } from './go-types';
 import { sgfToGtpCoord } from './sgf';
 
@@ -133,10 +133,15 @@ export function parseSgf(text: string): SgfParseResult {
   let playerWhite = '';
 
   if (root.properties.SZ) {
-    boardSize = parseInt(root.properties.SZ[0], 10) || 19;
+    const parsedSize = parseInt(root.properties.SZ[0], 10);
+    // Go 棋盘最多 19 路（GTP 列字母 A-T 去掉 I）；非法尺寸回退 19，
+    // 避免 SZ[1] 这类值把棋盘表现成 1x1 / 除零。
+    boardSize = parsedSize >= 2 && parsedSize <= 19 ? parsedSize : 19;
   }
   if (root.properties.KM) {
-    komi = parseFloat(root.properties.KM[0]) || 6.5;
+    const parsedKomi = parseFloat(root.properties.KM[0]);
+    // 不能用 `|| 6.5`：KM[0]（无贴目）是合法值。
+    komi = Number.isFinite(parsedKomi) ? parsedKomi : 7.5;
   }
   if (root.properties.RU) {
     const ru = root.properties.RU[0].toLowerCase();
@@ -169,7 +174,15 @@ function rowColToGTP(row: number, col: number, boardSize: number): string {
   return COL_LETTERS_GTP[col] + (boardSize - row);
 }
 
-type AnalysisCache = Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+type ParsedSgfTree = {
+  tree: MoveNode;
+  boardSize: number;
+  komi: number;
+  rules: string;
+  analysisCache: AnalysisCache;
+  playerBlack: string;
+  playerWhite: string;
+};
 
 /** Convert a coordinate token from an LZ property to GTP format.
  *  LZ coords may be SGF lowercase ("dd") or GTP uppercase ("D16"). */
@@ -180,7 +193,7 @@ function lzCoordToGtp(coord: string, boardSize: number): string {
     // GTP-style uppercase, e.g. "D16"; validate against the board
     const col = COL_LETTERS_GTP.indexOf(coord[0]);
     const row = parseInt(coord.slice(1), 10);
-    if (col >= 0 && row >= 1 && row <= boardSize) return coord;
+    if (col >= 0 && col < boardSize && row >= 1 && row <= boardSize) return coord;
     return '';
   }
   try {
@@ -293,7 +306,6 @@ function sgfNodeToMoveNode(
   parentId: string | null,
   moveNumber: number,
   boardSize: number,
-  nextColor: 'black' | 'white',
   analysisCache: AnalysisCache,
 ): MoveNode | null {
   nodeCount++;
@@ -309,14 +321,14 @@ function sgfNodeToMoveNode(
     if (sgfNode.children.length === 0) return null;
 
     if (sgfNode.children.length === 1) {
-      return sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor, analysisCache);
+      return sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, analysisCache);
     }
 
-    const firstChild = sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, nextColor, analysisCache);
+    const firstChild = sgfNodeToMoveNode(sgfNode.children[0], parentId, moveNumber, boardSize, analysisCache);
     if (!firstChild) return null;
 
     for (let i = 1; i < sgfNode.children.length; i++) {
-      const branch = sgfNodeToMoveNode(sgfNode.children[i], parentId, moveNumber, boardSize, nextColor, analysisCache);
+      const branch = sgfNodeToMoveNode(sgfNode.children[i], parentId, moveNumber, boardSize, analysisCache);
       if (branch) {
         firstChild.children.push(branch);
       }
@@ -335,7 +347,6 @@ function sgfNodeToMoveNode(
       parentId,
       moveNumber,
       boardSize,
-      nextColor,
       analysisCache,
     );
     if (!firstChild) return null;
@@ -345,7 +356,6 @@ function sgfNodeToMoveNode(
         parentId,
         moveNumber,
         boardSize,
-        nextColor,
         analysisCache,
       );
       if (branch) {
@@ -382,15 +392,14 @@ function sgfNodeToMoveNode(
       const blackWinrate = isBlack ? (1 - parsed.engineWinrate) : parsed.engineWinrate;
       moveNode.winrate = blackWinrate;
 
-      // Store in analysis cache (with engine-perspective winrate)
-      analysisCache.set(moveNumber, {
+      // Store in analysis cache keyed by node id (same move number on a
+      // different branch is a different position).
+      analysisCache.set(nodeId, {
         data: parsed.candidates,
         winrate: parsed.engineWinrate,
       });
     }
   }
-
-  const nextMoveColor = color === 'black' ? 'white' : 'black';
 
   for (let i = 0; i < sgfNode.children.length; i++) {
     const child = sgfNodeToMoveNode(
@@ -398,7 +407,6 @@ function sgfNodeToMoveNode(
       nodeId,
       moveNumber + 1,
       boardSize,
-      nextMoveColor,
       analysisCache,
     );
     if (child) {
@@ -410,15 +418,7 @@ function sgfNodeToMoveNode(
 }
 
 /** Convert parsed SGF to MoveNode tree, extracting analysis data */
-export function sgfToMoveTree(sgfText: string): {
-  tree: MoveNode;
-  boardSize: number;
-  komi: number;
-  rules: string;
-  analysisCache: AnalysisCache;
-  playerBlack: string;
-  playerWhite: string;
-} | null {
+export function sgfToMoveTree(sgfText: string): ParsedSgfTree | null {
   try {
     nodeCount = 0;
     const { root, boardSize, komi, rules, playerBlack, playerWhite } = parseSgf(sgfText);
@@ -445,16 +445,14 @@ export function sgfToMoveTree(sgfText: string): {
     };
 
     const analysisCache: AnalysisCache = new Map();
-    const nextColor: 'black' | 'white' = 'black';
-
     if (root.properties.B || root.properties.W) {
-      const moveNode = sgfNodeToMoveNode(root, 'root', 1, boardSize, nextColor, analysisCache);
+      const moveNode = sgfNodeToMoveNode(root, 'root', 1, boardSize, analysisCache);
       if (moveNode) {
         rootNode.children.push(moveNode);
       }
     } else {
       for (const child of root.children) {
-        const moveNode = sgfNodeToMoveNode(child, 'root', 1, boardSize, nextColor, analysisCache);
+        const moveNode = sgfNodeToMoveNode(child, 'root', 1, boardSize, analysisCache);
         if (moveNode) {
           rootNode.children.push(moveNode);
         }
@@ -467,27 +465,11 @@ export function sgfToMoveTree(sgfText: string): {
   }
 }
 
-export function parseSgfContent(sgfText: string): {
-  tree: MoveNode;
-  boardSize: number;
-  komi: number;
-  rules: string;
-  analysisCache: AnalysisCache;
-  playerBlack: string;
-  playerWhite: string;
-} | null {
+export function parseSgfContent(sgfText: string): ParsedSgfTree | null {
   return sgfToMoveTree(sgfText);
 }
 
-export async function readSgfFile(file: File): Promise<{
-  tree: MoveNode;
-  boardSize: number;
-  komi: number;
-  rules: string;
-  analysisCache: AnalysisCache;
-  playerBlack: string;
-  playerWhite: string;
-} | null> {
+export async function readSgfFile(file: File): Promise<ParsedSgfTree | null> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {

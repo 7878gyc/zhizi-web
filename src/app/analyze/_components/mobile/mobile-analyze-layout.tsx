@@ -11,7 +11,7 @@ import WinrateChart from '@/components/winrate-chart';
 import AnalysisPanel from '@/components/analysis-panel';
 import HawkEyePanel from '@/components/hawk-eye-panel';
 import { cn } from '@/lib/utils';
-import type { AnalysisInfo, MoveNode } from '@/lib/go-types';
+import type { AnalysisCache, AnalysisInfo, MoveNode } from '@/lib/go-types';
 
 interface MobileAnalyzeLayoutProps {
   /* Board */
@@ -23,7 +23,6 @@ interface MobileAnalyzeLayoutProps {
   winrateHistory: (number | null)[];
   displayWinrate: number | null;
   analysisData: AnalysisInfo[];
-  selectedPv: AnalysisInfo | null;
   variationMoves: { row: number; col: number; color: 'black' | 'white'; moveNumber: number }[];
   selectedMove?: string | null;
   onSelectMove?: (info: AnalysisInfo) => void;
@@ -59,13 +58,14 @@ interface MobileAnalyzeLayoutProps {
   currentNodeId: string;
   currentMoveNumber: number;
   onJumpToNode: (nodeId: string) => void;
-  onDeleteNode: (nodeId: string) => void;
   onDeleteBranch: (nodeId: string) => void;
 
   /* HawkEye */
   gtpMoves: string[];
-  /** Pre-built analysis cache (offline mode). Lets HawkEye rebuild results after disconnect. */
-  analysisCache?: Map<number, { data: AnalysisInfo[]; winrate: number | null }>;
+  /** nodeId → analysis cache (live + imported). */
+  analysisCache: AnalysisCache;
+  /** Current path node ids, index = moves played. */
+  analysisPathIds: string[];
   /** Jump to the given move number in the game tree (from HawkEye problem list). */
   onJumpToMove?: (moveNumber: number) => void;
 
@@ -75,7 +75,6 @@ interface MobileAnalyzeLayoutProps {
   isConnected: boolean;
   isConnecting: boolean;
   analysisError: string | null;
-  logs: string[];
   onToggleAnalyze: () => void;
   onToggleAuto: () => void;
 
@@ -109,7 +108,6 @@ export function MobileAnalyzeLayout({
   winrateHistory,
   displayWinrate,
   analysisData,
-  selectedPv,
   variationMoves,
   selectedMove,
   onSelectMove,
@@ -137,17 +135,16 @@ export function MobileAnalyzeLayout({
   currentNodeId,
   currentMoveNumber,
   onJumpToNode,
-  onDeleteNode,
   onDeleteBranch,
   gtpMoves,
   analysisCache,
+  analysisPathIds,
   onJumpToMove,
   isAnalyzing,
   isAutoAnalyze,
   isConnected,
   isConnecting,
   analysisError,
-  logs: _logs,
   onToggleAnalyze,
   onToggleAuto,
   onNewBoard,
@@ -270,7 +267,6 @@ export function MobileAnalyzeLayout({
                   tree={moveTree}
                   currentNodeId={currentNodeId}
                   onJumpToNode={onJumpToNode}
-                  onDeleteNode={onDeleteNode}
                   onDeleteBranch={onDeleteBranch}
                   hideTitle
                 />
@@ -298,11 +294,9 @@ export function MobileAnalyzeLayout({
               }
               hawkEyeSlot={
                 <HawkEyePanel
-                  analysisData={analysisData}
-                  currentWinrate={displayWinrate}
                   gtpMoves={gtpMoves}
-                  isConnected={isConnected}
                   analysisCache={analysisCache}
+                  analysisPathIds={analysisPathIds}
                   onJumpToMove={onJumpToMove}
                   hideTitle
                 />

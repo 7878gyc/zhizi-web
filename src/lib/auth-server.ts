@@ -50,11 +50,17 @@ export async function extractIdentifier(request: Request): Promise<string> {
 /**
  * 加盐哈希（HMAC-SHA256(identifier)）。
  * 盐由部署环境的 USER_HASH_SALT 提供，必须稳定持久：一旦变更，已存在的加盐账号
- * 将无法再定位到自己的数据。未配置盐时退回旧的无盐 SHA-256，保证兼容。
+ * 将无法再定位到自己的数据。生产环境缺少盐时直接报错（fail closed），
+ * 避免悄悄退化成可被手机号/邮箱枚举的无盐哈希。
  */
 export function hashIdentifier(identifier: string): string {
   const salt = process.env.USER_HASH_SALT ?? '';
-  if (!salt) return legacyHashIdentifier(identifier);
+  if (!salt) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('USER_HASH_SALT must be configured in production');
+    }
+    return legacyHashIdentifier(identifier);
+  }
   return createHmac('sha256', salt).update(identifier).digest('hex');
 }
 

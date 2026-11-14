@@ -56,6 +56,8 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   // 每次 sync 递增，用于丢弃被更新请求取代的在途同步
   const runIdRef = useRef(0);
   const aiReadyRef = useRef(false);
+  // 重放盘面期间丢弃仍在途的旧盘面 info 行（先 stop 也可能有残留）
+  const syncingRef = useRef(false);
   // 最近一次同步参数，重连后据此整盘重放
   const lastParamsRef = useRef<SyncParams | null>(null);
   const configRef = useRef<AiConfig | null>(null);
@@ -141,6 +143,10 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       return;
     }
 
+    // 正在 boardsize/clear_board/play 重放：此时收到的 info 仍属于旧盘面，
+    // 直接丢弃，避免写进新局面的分析/缓存。
+    if (syncingRef.current) return;
+
     // 分析输出：解析 info 行
     const candidates = parseInfoLine(line);
     if (candidates.length === 0) return;
@@ -194,7 +200,13 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       const socket = socketRef.current;
       if (!socket?.connected || !aiReadyRef.current) return;
 
+      // 先停掉旧盘面的 kata-analyze，再重放。否则 play/boardsize 期间旧分析
+      // 仍会持续吐 info，被误当成新局面的分析。
+      syncingRef.current = true;
       dropPending('同步被新的请求取代');
+      if (socket.connected) socket.emit('stdin', 'stop\n');
+      bufferRef.current = '';
+
       const runId = ++runIdRef.current;
       const superseded = () => gen !== generationRef.current || runId !== runIdRef.current;
       setAnalysisData([]);
@@ -231,9 +243,11 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         const player = params.player === 'black' ? 'B' : 'W';
         const interval = params.analyzeVisits || 50;
         const id = ++commandIdRef.current;
+        syncingRef.current = false;
         socket.emit('stdin', `${id} kata-analyze ${player} ${interval}\n`);
       } catch (e) {
         if (superseded()) return;
+        syncingRef.current = false;
         const message = e instanceof Error ? e.message : 'GTP 同步失败';
         log(message);
         setError(message);
@@ -318,6 +332,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
         socket.on('disconnect', (reason) => {
           if (gen !== generationRef.current) return;
           aiReadyRef.current = false;
+          syncingRef.current = false;
           setAiReady(false);
           setIsAnalyzing(false);
           setIsConnected(false);
@@ -385,6 +400,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
       dropPending('重新连接');
       bufferRef.current = '';
       aiReadyRef.current = false;
+      syncingRef.current = false;
       lastParamsRef.current = null;
 
       setAnalysisData([]);
@@ -420,6 +436,7 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
     dropPending('已断开');
     bufferRef.current = '';
     aiReadyRef.current = false;
+    syncingRef.current = false;
     lastParamsRef.current = null;
     setAiReady(false);
     setIsAnalyzing(false);
@@ -441,7 +458,12 @@ export function useZhiziAnalysis(): UseZhiziAnalysisReturn {
   const syncAndAnalyze = useCallback(
     (params: SyncParams) => {
       lastParamsRef.current = params;
-      if (!aiReadyRef.current) return; // 未就绪：ready 后会自动重放
+      if (!aiReadyRef.current) {
+        // 未就绪：清掉旧局面的展示数据，等 ready 后会自动整盘重放。
+        setAnalysisData([]);
+        setCurrentWinrate(null);
+        return;
+      }
       void runSync(params, generationRef.current);
     },
     [runSync],
