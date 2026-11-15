@@ -14,6 +14,9 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  other: {
+    'color-scheme': 'dark',
+  },
   openGraph: {
     type: 'website',
     siteName: '智子围棋 Web',
@@ -36,8 +39,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body className={`antialiased`}>
+    <html lang="zh-CN" className="dark">
+      <body className="antialiased bg-[#0F0F23] text-[#E0E0E0]">
         {children}
       </body>
     </html>

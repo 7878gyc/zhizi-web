@@ -46,9 +46,11 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
-    // Local package-manager caches (not project source):
+    // Local package-manager caches / audit artifacts (not project source):
     '.corepack/**',
     '.pnpm-store/**',
+    '.ui-check/**',
+    '.ui-audit/**',
     // Build artifacts:
     'server.js',
     'dist/**',

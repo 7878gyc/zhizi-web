@@ -77,11 +77,11 @@ export const GPU_TYPES = [
 
 // KataGo engines（智子围棋公开契约）
 export const KATA_ENGINES = [
-  { value: 'katago-TENSORRT', label: 'TensorRT（默认）' },
-  { value: 'katago-CUDA', label: 'CUDA（启动更快）' },
+  { value: 'katago-CUDA', label: 'CUDA（默认，启动更快）' },
+  { value: 'katago-TENSORRT', label: 'TensorRT（需预热）' },
 ];
 
-export const DEFAULT_ENGINE = 'katago-TENSORRT';
+export const DEFAULT_ENGINE = 'katago-CUDA';
 
 // Weights available（智子围棋公开契约）
 export const WEIGHTS = [

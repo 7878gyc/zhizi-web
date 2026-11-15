@@ -161,3 +161,7 @@ Desktop.ini
 .coze-logs
 .codegraph
 lizzieyzy/
+
+# Local UI audit artifacts
+.ui-check/
+.ui-audit/

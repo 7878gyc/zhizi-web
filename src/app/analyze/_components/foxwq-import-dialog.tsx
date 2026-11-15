@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useDialogBehavior } from '@/hooks/use-dialog-behavior';
 
 interface FoxwqImportDialogProps {
   open: boolean;
@@ -37,11 +38,20 @@ export default function FoxwqImportDialog({ open, onClose, onImport }: FoxwqImpo
     onClose();
   }, [onClose]);
 
+  const dialogRef = useDialogBehavior(open, handleClose);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[#16213E] rounded-lg p-5 w-[400px] border border-[#2A3A5C] shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="导入野狐围棋棋谱"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[400px] max-h-[85vh] overflow-y-auto border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">导入野狐围棋棋谱</h3>
         <p className="text-xs text-[#8B8FA3] mb-3">
           粘贴野狐围棋分享链接，如：https://www.foxwq.com/... 或 https://share.foxwq.com/...

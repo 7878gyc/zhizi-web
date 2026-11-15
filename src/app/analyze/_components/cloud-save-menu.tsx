@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Trash2, Cloud, Download } from 'lucide-react';
+import { useDialogBehavior } from '@/hooks/use-dialog-behavior';
 
 interface CloudRecord {
   id: string;
@@ -32,11 +33,19 @@ export function CloudImportDialog({
   onSelect,
   onDelete,
 }: CloudImportDialogProps) {
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[#16213E] rounded-lg p-5 w-[420px] border border-[#2A3A5C] shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="从云棋谱库导入"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] max-h-[85vh] overflow-y-auto border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">从云棋谱库导入</h3>
 
         {error && <p className="text-xs text-[#FF6B6B] mb-3">{error}</p>}

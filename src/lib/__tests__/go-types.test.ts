@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   AI_CONFIGS,
+  DEFAULT_ENGINE,
+  KATA_ENGINES,
   buildArgsString,
   coordToGTP,
   gtpToCoord,
@@ -97,10 +99,16 @@ describe('buildArgsString & AI_CONFIGS', () => {
     expect(AI_CONFIGS.every(c => c.engineType === 'go')).toBe(true);
   });
 
+  it('defaults to the CUDA engine', () => {
+    expect(DEFAULT_ENGINE).toBe('katago-CUDA');
+    expect(KATA_ENGINES[0].value).toBe('katago-CUDA');
+    expect(AI_CONFIGS.every(c => c.kataName === 'katago-CUDA')).toBe(true);
+  });
+
   it('builds the expected argument string', () => {
     const cfg = AI_CONFIGS.find(c => c.gpuType === '1x' && c.kataWeight === '18bnbt')!;
     expect(buildArgsString(cfg)).toBe(
-      '--platform all --engine-type go --gpu-type 1x --kata-name katago-TENSORRT --kata-weight 18bnbt'
+      '--platform all --engine-type go --gpu-type 1x --kata-name katago-CUDA --kata-weight 18bnbt'
     );
   });
 

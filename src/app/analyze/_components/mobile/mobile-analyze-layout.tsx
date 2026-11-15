@@ -233,6 +233,7 @@ export function MobileAnalyzeLayout({
               hoverCoord={hoverCoord}
               onHoverChange={onBoardHover}
               variationMoves={variationMoves.length > 0 ? variationMoves : null}
+              fit="contain"
             />
           </div>
 

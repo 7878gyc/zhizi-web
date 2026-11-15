@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { ChevronDown, ChevronRight, Loader2, Wallet, CreditCard, LogOut, Crown, RefreshCw, KeyRound, Smartphone } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Wallet, CreditCard, LogOut, Crown, RefreshCw, KeyRound, Smartphone, FolderOpen } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +12,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 import { fetchCurrentUser, saveUser } from '@/lib/auth';
+import { useDialogBehavior } from '@/hooks/use-dialog-behavior';
 import { mapZhiziError } from '@/lib/zhizi-errors';
 
 // ---------- Types ----------
@@ -295,11 +297,19 @@ function ConsumptionDialog({ open, onClose }: ConsumptionDialogProps) {
     return [...usageRows, ...creditRows].sort((a, b) => b.ts - a.ts);
   }, [usages, credits]);
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl max-h-[80vh] flex flex-col">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="消费记录"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl max-h-[80vh] flex flex-col outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3 shrink-0">消费记录</h3>
 
         {remainingBalanceYuan !== null && (
@@ -451,11 +461,19 @@ function VipDialog({ open, onClose }: VipDialogProps) {
     }
   };
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="VIP充值"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">VIP充值</h3>
 
         {error && (
@@ -634,11 +652,19 @@ function RechargeDialog({ open, onClose }: RechargeDialogProps) {
     }
   };
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="充值"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl outline-none"
+      >
         {/* Top 3/4: balance recharge */}
         <div className="pb-4 border-b border-[#2A3A5C]/50">
           <h3 className="text-sm font-bold text-[#E8B931] mb-3">充值余额</h3>
@@ -792,6 +818,7 @@ function ChangePasswordDialog({ open, onClose, onChanged }: ChangePasswordDialog
     }
   }, [open]);
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   const submit = async () => {
@@ -825,7 +852,14 @@ function ChangePasswordDialog({ open, onClose, onChanged }: ChangePasswordDialog
 
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="修改密码"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">修改密码</h3>
 
         <div className="space-y-3">
@@ -905,6 +939,7 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
     }
   }, [open]);
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   const accountField: Record<string, string> = contactType === 'phone' ? { phone: newAccount } : { email: newAccount };
@@ -968,7 +1003,14 @@ function ChangePhoneDialog({ open, onClose }: ChangePhoneDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="更换手机或邮箱"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">更换手机 / 邮箱</h3>
 
         {done ? (
@@ -1082,6 +1124,7 @@ function MembershipAutoRenewDialog({ open, onClose }: MembershipAutoRenewDialogP
     };
   }, [open]);
 
+  const dialogRef = useDialogBehavior(open, onClose);
   if (!open) return null;
 
   const save = async () => {
@@ -1103,7 +1146,14 @@ function MembershipAutoRenewDialog({ open, onClose }: MembershipAutoRenewDialogP
 
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 px-4">
-      <div className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="会员自动续费"
+        tabIndex={-1}
+        className="bg-[#16213E] rounded-lg p-5 w-full max-w-[420px] border border-[#2A3A5C] shadow-xl outline-none"
+      >
         <h3 className="text-sm font-bold text-[#E8B931] mb-3">会员自动续费</h3>
 
         {loading ? (
@@ -1189,6 +1239,15 @@ export function UserMenu({ userDisplayName, onLogout }: UserMenuProps) {
           >
             <CreditCard className="w-3.5 h-3.5 text-[#8B8FA3]" />
             消费记录
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link
+              href="/records"
+              className="text-xs text-[#E0E0E0] hover:bg-[#16213E] cursor-pointer flex items-center gap-2"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#8B8FA3]" />
+              我的棋谱
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setShowRecharge(true)}

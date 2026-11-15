@@ -19,6 +19,7 @@ import { gtpToCoord, getExtendedLine, getPathToNode, GPU_TYPES, WEIGHTS, KATA_EN
 import { readSgfFile, parseSgfContent } from '@/lib/sgf-parser';
 import { generateAnalyzedSGF, generatePureSGF, downloadSgfFile } from '@/lib/sgf';
 import { buildAnalysisSyncKey, toSyncParams } from '@/lib/analysis-key';
+import { uploadSgfToCloud } from '@/lib/cloud-save';
 import {
   MobileAnalyzeLayout,
 } from './_components/mobile/mobile-analyze-layout';
@@ -476,45 +477,14 @@ export default function AnalyzePage() {
       const baseName =
         playerBlack && playerWhite ? `${playerBlack}vs${playerWhite}` : `新盘面-${timestamp}`;
       const fileName = `${baseName}.sgf`;
-      const isOverwrite =
-        cloudSourceRecordId !== null && cloudSourceFileKeyRef.current !== null;
-
-      const uploadBody: Record<string, unknown> = { fileName, fileSize: blob.size };
-      if (isOverwrite) uploadBody.fileKey = cloudSourceFileKeyRef.current;
-
-      const uploadResp = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(uploadBody),
+      const result = await uploadSgfToCloud({
+        fileName,
+        blob,
+        sourceRecordId: cloudSourceRecordId,
+        sourceFileKey: cloudSourceFileKeyRef.current,
       });
-      if (!uploadResp.ok) {
-        const err = await uploadResp.json();
-        throw new Error(err.error || '获取上传链接失败');
-      }
-      const { uploadUrl, fileKey } = await uploadResp.json();
-
-      const putResp = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/x-go-sgf' },
-        body: blob,
-      });
-      if (!putResp.ok) throw new Error('文件上传到云端失败');
-
-      if (isOverwrite) {
-        await fetch(`/api/records/${cloudSourceRecordId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName }),
-        });
-        setCloudSourceRecordId(null);
-        cloudSourceFileKeyRef.current = null;
-      } else {
-        await fetch('/api/records', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName, fileKey, fileSize: blob.size }),
-        });
-      }
+      setCloudSourceRecordId(result.recordId);
+      cloudSourceFileKeyRef.current = result.fileKey;
       alert('棋谱已保存到云棋谱库');
     } catch (err) {
       alert(err instanceof Error ? err.message : '保存到云端失败');
@@ -673,6 +643,9 @@ export default function AnalyzePage() {
         cacheRef.current.clear();
         setDisplayAnalysis([]);
         setDisplayWinrate(null);
+        // 棋盘尺寸变了，不再属于同一条云棋谱：避免把新棋谱覆盖到旧记录。
+        setCloudSourceRecordId(null);
+        cloudSourceFileKeyRef.current = null;
         setBoardSize(size);
       }
     },

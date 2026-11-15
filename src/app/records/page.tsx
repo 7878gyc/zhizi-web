@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Trash2, ArrowLeft, FileText, Loader2 } from 'lucide-react';
+import { Upload, Trash2, ArrowLeft, FileText, Loader2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -46,6 +46,7 @@ export default function RecordsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +141,28 @@ export default function RecordsPage() {
     }
   }, [loadRecords]);
 
+  const handleDownload = useCallback(async (id: string) => {
+    setDownloadingId(id);
+    setError('');
+    try {
+      const resp = await fetch(`/api/records/${id}/download`);
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.downloadUrl) {
+        throw new Error(data?.error || '获取下载链接失败');
+      }
+      const a = document.createElement('a');
+      a.href = data.downloadUrl;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载失败');
+    } finally {
+      setDownloadingId(null);
+    }
+  }, []);
+
   const handleDelete = useCallback(async (id: string) => {
     if (!window.confirm('确认删除此棋谱？')) return;
 
@@ -188,6 +211,8 @@ export default function RecordsPage() {
               variant="ghost"
               size="icon"
               onClick={() => router.push('/analyze')}
+              aria-label="返回分析页"
+              title="返回分析页"
               className="text-[#8B8FA3] hover:text-[#E0E0E0]"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -241,46 +266,117 @@ export default function RecordsPage() {
                 暂无棋谱，点击右上角上传
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-[#2A3A5C]/50 hover:bg-transparent">
-                    <TableHead className="text-[#8B8FA3] text-xs">文件名</TableHead>
-                    <TableHead className="text-[#8B8FA3] text-xs w-24">大小</TableHead>
-                    <TableHead className="text-[#8B8FA3] text-xs w-40">上传时间</TableHead>
-                    <TableHead className="text-[#8B8FA3] text-xs w-16 text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                {/* 移动端用卡片，避免横向滚动后才能看到操作按钮 */}
+                <div className="sm:hidden space-y-3">
                   {records.map(record => (
-                    <TableRow key={record.id} className="border-[#2A3A5C]/30">
-                      <TableCell className="text-[#E0E0E0] text-sm font-medium">
-                        {record.fileName}
-                      </TableCell>
-                      <TableCell className="text-[#8B8FA3] text-xs">
-                        {formatSize(record.fileSize)}
-                      </TableCell>
-                      <TableCell className="text-[#8B8FA3] text-xs">
-                        {formatDate(record.createdAt)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(record.id)}
-                          disabled={deletingId === record.id}
-                          className="text-[#8B8FA3] hover:text-red-400 hover:bg-red-500/10"
-                        >
-                          {deletingId === record.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <div key={record.id} className="rounded-lg border border-[#2A3A5C]/50 bg-[#1A1A2E]/50 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 break-all text-sm font-medium text-[#E0E0E0]">
+                          {record.fileName}
+                        </p>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`下载 ${record.fileName}`}
+                            title="下载"
+                            onClick={() => handleDownload(record.id)}
+                            disabled={downloadingId === record.id}
+                            className="h-8 w-8 text-[#8B8FA3] hover:text-[#E8B931] hover:bg-[#E8B931]/10"
+                          >
+                            {downloadingId === record.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`删除 ${record.fileName}`}
+                            title="删除"
+                            onClick={() => handleDelete(record.id)}
+                            disabled={deletingId === record.id}
+                            className="h-8 w-8 text-[#8B8FA3] hover:text-red-400 hover:bg-red-500/10"
+                          >
+                            {deletingId === record.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-[#8B8FA3]">
+                        {formatSize(record.fileSize)} · {formatDate(record.createdAt)}
+                      </p>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+
+                <div className="hidden sm:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-[#2A3A5C]/50 hover:bg-transparent">
+                        <TableHead className="text-[#8B8FA3] text-xs">文件名</TableHead>
+                        <TableHead className="text-[#8B8FA3] text-xs w-24">大小</TableHead>
+                        <TableHead className="text-[#8B8FA3] text-xs w-40">上传时间</TableHead>
+                        <TableHead className="text-[#8B8FA3] text-xs w-24 text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {records.map(record => (
+                        <TableRow key={record.id} className="border-[#2A3A5C]/30">
+                          <TableCell className="text-[#E0E0E0] text-sm font-medium max-w-[360px] truncate" title={record.fileName}>
+                            {record.fileName}
+                          </TableCell>
+                          <TableCell className="text-[#8B8FA3] text-xs">
+                            {formatSize(record.fileSize)}
+                          </TableCell>
+                          <TableCell className="text-[#8B8FA3] text-xs">
+                            {formatDate(record.createdAt)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`下载 ${record.fileName}`}
+                                title="下载"
+                                onClick={() => handleDownload(record.id)}
+                                disabled={downloadingId === record.id}
+                                className="text-[#8B8FA3] hover:text-[#E8B931] hover:bg-[#E8B931]/10"
+                              >
+                                {downloadingId === record.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Download className="w-4 h-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`删除 ${record.fileName}`}
+                                title="删除"
+                                onClick={() => handleDelete(record.id)}
+                                disabled={deletingId === record.id}
+                                className="text-[#8B8FA3] hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                {deletingId === record.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

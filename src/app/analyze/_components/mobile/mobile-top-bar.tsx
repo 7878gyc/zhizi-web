@@ -86,18 +86,48 @@ export function MobileTopBar({
   onToggleAnalyze,
 }: MobileTopBarProps) {
   return (
-    <div className="flex items-center justify-between px-2 py-1.5 bg-[#0F0F23] border-b border-[#2A3A5C]/40 shrink-0 relative z-20 pointer-events-auto">
-      {/* Left: user name */}
-      <div className="flex items-center min-w-0">
-        {userDisplayName ? (
-          <UserMenu userDisplayName={userDisplayName} onLogout={onLogout ?? (() => {})} />
-        ) : (
-          <span className="text-xs text-[#4A4A6A]">未登录</span>
-        )}
+    <div className="shrink-0 bg-[#0F0F23] border-b border-[#2A3A5C]/40 relative z-20 pointer-events-auto">
+      {/* Row 1: user + start/stop. Keep the config controls on their own row so
+          long phone numbers can never sit underneath the GPU dropdown. */}
+      <div className="flex items-center justify-between gap-2 px-2 pt-1.5">
+        <div className="flex items-center min-w-0">
+          {userDisplayName ? (
+            <UserMenu userDisplayName={userDisplayName} onLogout={onLogout ?? (() => {})} />
+          ) : (
+            <span className="text-xs text-[#4A4A6A]">未登录</span>
+          )}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            'h-6 px-2 text-[11px] rounded-full border shrink-0',
+            isAnalyzing
+              ? 'text-red-400 border-red-500/30 hover:bg-red-500/10'
+              : 'text-[#4A9EFF] border-[#4A9EFF]/30 hover:bg-[#4A9EFF]/10'
+          )}
+          onClick={onToggleAnalyze}
+          disabled={isConnecting}
+        >
+          {isConnecting ? (
+            <>连接中</>
+          ) : isAnalyzing ? (
+            <>
+              <Square className="h-2.5 w-2.5 mr-0.5" />
+              停止
+            </>
+          ) : (
+            <>
+              <Play className="h-2.5 w-2.5 mr-0.5" />
+              开始
+            </>
+          )}
+        </Button>
       </div>
 
-      {/* Center: GPU + Weight + Engine dropdowns */}
-      <div className="flex items-center gap-0.5">
+      {/* Row 2: GPU + weight + engine */}
+      <div className="flex items-center justify-center gap-0.5 px-2 pb-1.5 pt-1">
         <ConfigDropdown value={gpu} options={gpuOptions} onChange={onGpuChange} minWidth="4rem" />
         <ConfigDropdown value={weight} options={weightOptions} onChange={onWeightChange} minWidth="5rem" />
         <ConfigDropdown
@@ -108,34 +138,6 @@ export function MobileTopBar({
           minWidth="5.5rem"
         />
       </div>
-
-      {/* Right: Start/Stop button */}
-      <Button
-        variant="outline"
-        size="sm"
-        className={cn(
-          'h-6 px-2 text-[11px] rounded-full border',
-          isAnalyzing
-            ? 'text-red-400 border-red-500/30 hover:bg-red-500/10'
-            : 'text-[#4A9EFF] border-[#4A9EFF]/30 hover:bg-[#4A9EFF]/10'
-        )}
-        onClick={onToggleAnalyze}
-        disabled={isConnecting}
-      >
-        {isConnecting ? (
-          <>连接中</>
-        ) : isAnalyzing ? (
-          <>
-            <Square className="h-2.5 w-2.5 mr-0.5" />
-            停止
-          </>
-        ) : (
-          <>
-            <Play className="h-2.5 w-2.5 mr-0.5" />
-            开始
-          </>
-        )}
-      </Button>
     </div>
   );
 }

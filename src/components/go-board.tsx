@@ -21,6 +21,8 @@ interface GoBoardProps {
   hoverCoord?: { row: number; col: number } | null;
   onHoverChange?: (coord: { row: number; col: number } | null) => void;
   variationMoves?: VariationMove[] | null;
+  /** width: 宽高由宽度决定；contain: 同时受容器高度约束（移动端/横屏用） */
+  fit?: 'width' | 'contain';
 }
 
 const BOARD_COLOR = '#DCB35C';
@@ -50,6 +52,7 @@ export default function GoBoard({
   hoverCoord,
   onHoverChange,
   variationMoves,
+  fit = 'width',
 }: GoBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,16 +84,21 @@ export default function GoBoard({
     if (!container) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const w = entry.contentRect.width;
-        if (w > 0) {
-          setCanvasSize(Math.min(w, 700));
+        const { width, height } = entry.contentRect;
+        if (width <= 0) continue;
+        // contain 模式用于移动端：棋盘必须同时塞进可用宽高，横屏才不会裁切。
+        const size = fit === 'contain'
+          ? Math.min(width, height > 0 ? height : width, 700)
+          : Math.min(width, 700);
+        if (size > 0) {
+          setCanvasSize(size);
           setIsSized(true);
         }
       }
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [fit]);
 
   // Draw the board
   useEffect(() => {
@@ -462,7 +470,12 @@ export default function GoBoard({
     : false;
 
   return (
-    <div ref={containerRef} className="w-full max-w-[700px] aspect-square">
+    <div
+      ref={containerRef}
+      className={fit === 'contain'
+        ? 'w-full h-full min-w-0 min-h-0 flex items-center justify-center'
+        : 'w-full max-w-[700px] aspect-square'}
+    >
       <canvas
         ref={canvasRef}
         style={{
